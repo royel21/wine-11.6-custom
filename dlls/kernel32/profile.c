@@ -1128,6 +1128,18 @@ static HKEY open_mapped_key( const WCHAR *path, BOOL write )
     return NULL;
 }
 
+/* mapping that Windows always has, for prefixes created without it */
+static WCHAR *get_default_mapping( const WCHAR *filename, const WCHAR *section )
+{
+    static const WCHAR mci_path[] = L"SYS:Microsoft\\Windows NT\\CurrentVersion\\MCI Extensions";
+    WCHAR *path;
+
+    if (wcsicmp( PathFindFileNameW( filename ), L"win.ini" ) || wcsicmp( section, L"mci extensions" ))
+        return NULL;
+    if ((path = HeapAlloc( GetProcessHeap(), 0, sizeof(mci_path) ))) lstrcpyW( path, mci_path );
+    return path;
+}
+
 /* returns TRUE if the given section + name is mapped */
 static BOOL get_mapped_section_key( const WCHAR *filename, const WCHAR *section,
                                     const WCHAR *name, BOOL write, HKEY *ret_key )
@@ -1136,7 +1148,12 @@ static BOOL get_mapped_section_key( const WCHAR *filename, const WCHAR *section,
     HKEY key, subkey = NULL;
 
     if (!(key = open_file_mapping_key( filename )))
-        return FALSE;
+    {
+        if (!(path = get_default_mapping( filename, section ))) return FALSE;
+        *ret_key = open_mapped_key( path, write );
+        HeapFree( GetProcessHeap(), 0, path );
+        return TRUE;
+    }
 
     if (!RegOpenKeyExW( key, section, 0, KEY_READ, &subkey ))
     {
@@ -1162,6 +1179,7 @@ static BOOL get_mapped_section_key( const WCHAR *filename, const WCHAR *section,
                 HeapFree( GetProcessHeap(), 0, path );
                 path = combined_path;
             }
+            else path = get_default_mapping( filename, section );
         }
         RegCloseKey( key );
         if (!path) return FALSE;
