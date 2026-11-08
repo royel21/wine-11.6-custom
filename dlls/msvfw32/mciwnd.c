@@ -579,6 +579,15 @@ static LRESULT WINAPI MCIWndProc(HWND hWnd, UINT wMsg, WPARAM wParam, LPARAM lPa
                                              MCI_OPEN_ELEMENT | MCI_OPEN_ALIAS | MCI_WAIT,
                                              (DWORD_PTR)&mci_open);
 
+            /* the name can also be a device, e.g. "cdaudio" */
+            if (mwi->lasterror)
+            {
+                mci_open.lpstrDeviceType = (LPWSTR)lParam;
+                mwi->lasterror = mciSendCommandW(mwi->mci, MCI_OPEN,
+                                                 MCI_OPEN_TYPE | MCI_OPEN_ALIAS | MCI_WAIT,
+                                                 (DWORD_PTR)&mci_open);
+            }
+
             if (mwi->lasterror)
             {
                 mci_open.lpstrDeviceType = avivideoW;
@@ -623,7 +632,9 @@ static LRESULT WINAPI MCIWndProc(HWND hWnd, UINT wMsg, WPARAM wParam, LPARAM lPa
             mci_window.nCmdShow = -1;
             mwi->lasterror = mciSendCommandW(mwi->mci, MCI_WINDOW, MCI_DGV_WINDOW_STATE, (DWORD_PTR)&mci_window);
 
-            if (mwi->lasterror == MCIERR_NO_WINDOW)
+            /* devices without video, like cdaudio, don't know MCI_WINDOW at all */
+            if (mwi->lasterror == MCIERR_NO_WINDOW || mwi->lasterror == MCIERR_UNRECOGNIZED_COMMAND ||
+                mwi->lasterror == MCIERR_UNSUPPORTED_FUNCTION)
             {
                 has_window = FALSE;
                 mwi->lasterror = 0;
