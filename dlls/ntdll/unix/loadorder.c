@@ -451,8 +451,12 @@ static BOOL prefer_native_heuristics( const UNICODE_STRING *nt_name,
     if (!version_find_key( &entry, fileinfoW, &entry )) return FALSE;
     /* get the first child (usually "040904B0") */
     if (!get_version_entry( &entry, entry.child, entry.next )) return FALSE;
-    if (!version_find_key( &entry, companyW, &entry )) return FALSE;
-    if (!entry.info->type || !entry.info->val_len) return FALSE;
+    /* Microsoft DLLs always name their company, a DLL without one is a third-party wrapper */
+    if (!version_find_key( &entry, companyW, &entry ) || !entry.info->type || !entry.info->val_len)
+    {
+        TRACE( "preferring native with no company name for %s\n", debugstr_us( nt_name ));
+        return TRUE;
+    }
 
     name = entry.value;
     len = entry.info->val_len;
