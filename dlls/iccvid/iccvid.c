@@ -884,8 +884,13 @@ static LRESULT decompress( ICCVID_Info *info, ICDECOMPRESSEX *params )
 {
     unsigned int stride = get_stride( params->lpbiDst->biWidth, params->lpbiDst->biBitCount );
     unsigned char *dst = params->lpDst;
+    int width = params->dxDst, height = params->dyDst;
 
     TRACE( "info %p, params %p.\n", info, params );
+
+    /* some applications pass -1 for the size, meaning the whole destination */
+    if (width <= 0) width = params->lpbiDst->biWidth;
+    if (height <= 0) height = abs( params->lpbiDst->biHeight );
 
     if( (info==NULL) || (info->dwMagic!=ICCVID_MAGIC) )
         return ICERR_BADPARAM;
@@ -895,11 +900,11 @@ static LRESULT decompress( ICCVID_Info *info, ICDECOMPRESSEX *params )
         return ICERR_BADPARAM;
     }
 
-    dst += params->yDst * stride;
-    dst += params->xDst * params->lpbiDst->biBitCount / 8;
+    if (params->yDst > 0) dst += params->yDst * stride;
+    if (params->xDst > 0) dst += params->xDst * params->lpbiDst->biBitCount / 8;
 
     decode_cinepak( info->cvinfo, params->lpSrc, params->lpbiSrc->biSizeImage, dst,
-            params->dxDst, params->dyDst, stride, info->bits_per_pixel, params->lpbiDst->biHeight < 0 );
+            width, height, stride, info->bits_per_pixel, params->lpbiDst->biHeight < 0 );
 
     return ICERR_OK;
 }
