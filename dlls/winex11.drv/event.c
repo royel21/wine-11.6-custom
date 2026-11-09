@@ -1018,7 +1018,12 @@ static BOOL X11DRV_MapNotify( HWND hwnd, XEvent *event )
     {
         HWND hwndFocus = get_focus();
         if (hwndFocus && NtUserIsChild( hwnd, hwndFocus ))
+        {
             set_input_focus( data );
+            release_win_data( data );
+            raise_owned_popups( hwnd );
+            return TRUE;
+        }
     }
     release_win_data( data );
     return TRUE;
@@ -1374,7 +1379,12 @@ void X11DRV_ActivateWindow( HWND hwnd, HWND previous )
         release_win_data( data );
     }
 
-    if (flush) XFlush( x11drv_thread_data()->display );
+    if (flush)
+    {
+        /* set_input_focus raised the window, put its owned popups back above it */
+        raise_owned_popups( hwnd );
+        XFlush( x11drv_thread_data()->display );
+    }
 }
 
 static void drag_drop_enter( UINT entries_size, struct format_entry *entries )
