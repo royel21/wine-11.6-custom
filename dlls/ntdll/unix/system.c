@@ -80,6 +80,7 @@
 #include "wine/asm.h"
 #include "unix_private.h"
 #include "wine/debug.h"
+#include "tzmap.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(ntdll);
 
@@ -2911,6 +2912,11 @@ static time_t find_dst_change(time_t start, time_t end, int *is_dst)
     return min;
 }
 
+static int compare_tz_mapping( const void *name, const void *entry )
+{
+    return strcmp( name, ((const struct tz_mapping *)entry)->unix_name );
+}
+
 static BOOL get_tz_info_from_zoneinfo_name( RTL_DYNAMIC_TIME_ZONE_INFORMATION *tzi, const char *name, int year )
 {
     static const WCHAR wine_tz_map[] = { '\\','R','e','g','i','s','t','r','y','\\',
@@ -2937,21 +2943,28 @@ static BOOL get_tz_info_from_zoneinfo_name( RTL_DYNAMIC_TIME_ZONE_INFORMATION *t
     if (!tzinfo_dir) tzinfo_dir = default_tzinfo_dir;
     snprintf( buf, sizeof(buf), "%s/%s", tzinfo_dir, name );
 
-    if (!(f = fopen( buf, "r" )))
-    {
-        WARN( "Could not open %s.\n", debugstr_a( buf ));
-        return FALSE;
-    }
-    fclose( f );
+    /* the zoneinfo files may live elsewhere (e.g. under a relocated root), so
+     * only use their absence as a hint; the mapping below has to match anyway */
+    if (!(f = fopen( buf, "r" ))) WARN( "Could not open %s.\n", debugstr_a( buf ));
+    else fclose( f );
 
     init_unicode_string( &key_name, wine_tz_map );
     InitializeObjectAttributes( &attr, &key_name, 0, NULL, NULL );
-    if (NtOpenKey( &key, KEY_READ, &attr )) return FALSE;
-
-    ascii_to_unicode( nameW, name, strlen( name ) + 1 );
-    ret = reg_query_value( key, nameW, REG_SZ, win_nameW, sizeof(win_nameW) );
-    NtClose( key );
-    if (!ret) return FALSE;
+    ret = FALSE;
+    if (!NtOpenKey( &key, KEY_READ, &attr ))
+    {
+        ascii_to_unicode( nameW, name, strlen( name ) + 1 );
+        ret = reg_query_value( key, nameW, REG_SZ, win_nameW, sizeof(win_nameW) );
+        NtClose( key );
+    }
+    if (!ret)
+    {
+        /* prefixes created before the mapping existed don't have it in the registry */
+        const struct tz_mapping *map = bsearch( name, tz_mappings, ARRAY_SIZE(tz_mappings),
+                                                sizeof(tz_mappings[0]), compare_tz_mapping );
+        if (!map) return FALSE;
+        ascii_to_unicode( win_nameW, map->win_name, strlen( map->win_name ) + 1 );
+    }
     TRACE( "got %s for %s.\n", debugstr_w(win_nameW), debugstr_a( name ) );
 
     init_unicode_string( &key_name, Time_ZonesW );
