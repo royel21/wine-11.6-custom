@@ -326,7 +326,23 @@ static void client_surface_update_geometry( HWND hwnd, struct x11drv_client_surf
     int mask = 0;
     RECT rect;
 
-    if (NtUserGetPresentRect( hwnd, &rect, dpi )) OffsetRect( &rect, -rect.left, -rect.top );
+    if (NtUserGetPresentRect( hwnd, &rect, dpi ))
+    {
+        MENUBARINFO info = {.cbSize = sizeof(info)};
+        RECT window_rect;
+
+        OffsetRect( &rect, -rect.left, -rect.top );
+
+        /* a fullscreen window that still has a menu: keep the menu bar visible
+         * above the client surface instead of covering it */
+        if (hwnd == toplevel && !(NtUserGetWindowLongW( hwnd, GWL_STYLE ) & WS_CHILD) &&
+            NtUserGetMenuBarInfo( hwnd, OBJID_MENU, 0, &info ) && !IsRectEmpty( &info.rcBar ) &&
+            NtUserGetWindowRect( hwnd, &window_rect, dpi ))
+        {
+            int bottom = info.rcBar.bottom - 1 - window_rect.top;
+            if (bottom > rect.top && bottom < rect.bottom) rect.top = bottom;
+        }
+    }
     else if (!NtUserGetClientRect( hwnd, &rect, dpi )) return;
     else NtUserMapWindowPoints( origin, toplevel, (POINT *)&rect, 2, dpi );
 
