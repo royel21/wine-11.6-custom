@@ -303,6 +303,16 @@ void dump_fozdb_close(struct dump_fozdb *db)
     }
 }
 
+static bool element_factory_available(const char *name)
+{
+    GstElementFactory *factory;
+
+    if (!(factory = gst_element_factory_find(name)))
+        return false;
+    gst_object_unref(factory);
+    return true;
+}
+
 bool media_converter_init(void)
 {
     GST_DEBUG_CATEGORY_INIT(media_converter_debug,
@@ -320,7 +330,13 @@ bool media_converter_init(void)
         return false;
     }
 
-    if (!GST_ELEMENT_REGISTER(protonaudioconverterbin, NULL))
+    /* The bin claims all WMA streams and needs opusdec and capssetter; without
+     * them it is broken, so let decodebin use a regular WMA decoder instead. */
+    if (!element_factory_available("opusdec") || !element_factory_available("capssetter"))
+    {
+        GST_WARNING("opusdec or capssetter is missing, not registering protonaudioconverterbin.");
+    }
+    else if (!GST_ELEMENT_REGISTER(protonaudioconverterbin, NULL))
     {
         GST_ERROR("Failed to register protonaudioconverterbin.");
         return false;
