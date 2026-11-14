@@ -1242,6 +1242,41 @@ done:
 }
 
 
+static BOOL name_contains( const UNICODE_STRING *name, const char *str )
+{
+    unsigned int i, j, len = name->Length / sizeof(WCHAR), str_len = strlen( str );
+
+    for (i = 0; i + str_len <= len; i++)
+    {
+        for (j = 0; j < str_len; j++)
+        {
+            WCHAR ch = name->Buffer[i + j];
+            if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';
+            if (ch != (unsigned char)str[j]) break;
+        }
+        if (j == str_len) return TRUE;
+    }
+    return FALSE;
+}
+
+/* Prefixes created by older Wine versions contain a copy of the combined comctl32 builtin as
+ * the version 6 common controls assembly. Version 6 is a separate builtin now; load that one
+ * instead of the version 5 comctl32. */
+static void get_builtin_exp_name( const struct pe_mapping_info *pe_mapping, ANSI_STRING *exp_name )
+{
+    static const char comctl32[] = "comctl32.dll", comctl32_v6[] = "comctl32_v6.dll";
+
+    *exp_name = pe_mapping->exp_name;
+    if (exp_name->Length != strlen( comctl32 ) || strncasecmp( exp_name->Buffer, comctl32, exp_name->Length ))
+        return;
+    if (!name_contains( &pe_mapping->nt_name, "\\winsxs\\" ) ||
+        !name_contains( &pe_mapping->nt_name, ".common-controls_6595b64144ccf1df_6." ))
+        return;
+
+    exp_name->Buffer = (char *)comctl32_v6;
+    exp_name->Length = exp_name->MaximumLength = strlen( comctl32_v6 );
+}
+
 /***********************************************************************
  *           load_builtin
  *
@@ -1252,6 +1287,7 @@ NTSTATUS load_builtin( struct pe_mapping_info *pe_mapping, USHORT machine,
                        SECTION_IMAGE_INFORMATION *info, void **module, SIZE_T *size,
                        ULONG_PTR limit_low, ULONG_PTR limit_high, off_t offset )
 {
+    ANSI_STRING exp_name;
     NTSTATUS status;
     USHORT search_machine = pe_mapping->image.machine;
     enum loadorder loadorder = get_load_order( &pe_mapping->nt_name, pe_mapping );
@@ -1270,6 +1306,8 @@ NTSTATUS load_builtin( struct pe_mapping_info *pe_mapping, USHORT machine,
         loadorder = LO_BUILTIN;  /* builtin with no fallback since mapping a fake dll is not useful */
     }
 
+    get_builtin_exp_name( pe_mapping, &exp_name );
+
     if (is_arm64ec() && pe_mapping->image.is_hybrid && search_machine == IMAGE_FILE_MACHINE_AMD64)
         search_machine = current_machine;
 
@@ -1279,10 +1317,10 @@ NTSTATUS load_builtin( struct pe_mapping_info *pe_mapping, USHORT machine,
     case LO_NATIVE_BUILTIN:
         return STATUS_IMAGE_ALREADY_LOADED;
     case LO_BUILTIN:
-        return find_builtin_dll( &pe_mapping->nt_name, &pe_mapping->exp_name, module, size, info,
+        return find_builtin_dll( &pe_mapping->nt_name, &exp_name, module, size, info,
                                  limit_low, limit_high, search_machine, machine, FALSE, offset );
      default:
-        status = find_builtin_dll( &pe_mapping->nt_name, &pe_mapping->exp_name, module, size, info,
+        status = find_builtin_dll( &pe_mapping->nt_name, &exp_name, module, size, info,
                                    limit_low, limit_high, search_machine, machine,
                                    (loadorder == LO_DEFAULT), offset );
         if (status == STATUS_DLL_NOT_FOUND || status == STATUS_NOT_SUPPORTED)
