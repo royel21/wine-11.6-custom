@@ -1130,7 +1130,9 @@ tryagain:
                         continue;
                 }
 
+                if (obj) InterlockedIncrement( &obj->waiters );
                 ret = do_poll( fds, pollcount, timeout ? &end : NULL );
+                if (obj) InterlockedDecrement( &obj->waiters );
                 if (ret <= 0)
                     goto err;
                 else if (alertable && (fds[1].revents & POLLIN))
@@ -1144,18 +1146,25 @@ tryagain:
             }
 
             /* If we got here and we haven't timed out, that means all of the
-             * handles were signaled. Check to make sure they still are. */
+             * handles were signaled. Check to make sure they still are. A mutex
+             * we already own counts as signaled, but its fd is not readable,
+             * so leave it out, or the check can never succeed. */
+            j = 0;
             for (i = 0; i < count; i++)
             {
                 fds[i].fd = objs[i] ? objs[i]->fd : -1;
                 fds[i].events = POLLIN;
+                if (objs[i] && objs[i]->type == ESYNC_MUTEX &&
+                    ((struct mutex *)objs[i]->shm)->tid == GetCurrentThreadId())
+                    fds[i].fd = -1;
+                if (fds[i].fd != -1) j++;
             }
             /* There's no reason to check for APCs here. */
             pollcount = i;
 
             /* Poll everything to see if they're still signaled. */
             ret = poll( fds, pollcount, 0 );
-            if (ret == pollcount)
+            if (ret == j)
             {
                 BOOL abandoned = FALSE;
 
@@ -1177,11 +1186,22 @@ tryagain:
                     case ESYNC_AUTO_EVENT:
                         if ((size = read( fds[i].fd, &value, sizeof(value) )) != sizeof(value))
                         {
-                            /* We were too slow. Put everything back. */
+                            /* We were too slow. Put back what we already grabbed:
+                             * the objects before this one, except mutexes we
+                             * already owned and manual-reset events, which we
+                             * didn't take. */
                             value = 1;
-                            for (j = i; j >= 0; j--)
+                            for (j = i - 1; j >= 0; j--)
                             {
-                                if (write( obj->fd, &value, sizeof(value) ) == -1)
+                                struct esync *prev = objs[j];
+
+                                if (prev->type == ESYNC_MUTEX &&
+                                    ((struct mutex *)prev->shm)->tid == GetCurrentThreadId())
+                                    continue;
+                                if (prev->type != ESYNC_MUTEX && prev->type != ESYNC_SEMAPHORE &&
+                                    prev->type != ESYNC_AUTO_EVENT)
+                                    continue;
+                                if (write( prev->fd, &value, sizeof(value) ) == -1)
                                     return errno_to_status( errno );
                             }
 
