@@ -145,6 +145,17 @@ MAKE_FUNCPTR(XISelectEvents);
 #undef MAKE_FUNCPTR
 #endif
 
+/* Raw input for the mouse comes from the XInput2 raw events. Without XInput2
+ * (e.g. an X server that doesn't have it) the core events must produce it,
+ * or raw input users such as dinput never see the mouse buttons. */
+static UINT mouse_input_flags(void)
+{
+#ifdef HAVE_X11_EXTENSIONS_XINPUT2_H
+    if (xinput2_available) return SEND_HWMSG_NO_RAW;
+#endif
+    return 0;
+}
+
 #ifdef HAVE_X11_EXTENSIONS_XINPUT_H
 #define MAKE_FUNCPTR(f) static typeof(f) * p##f
 MAKE_FUNCPTR(XOpenDevice);
@@ -643,7 +654,7 @@ static void send_mouse_input( HWND hwnd, Window window, unsigned int state, INPU
     {
         struct x11drv_thread_data *thread_data = x11drv_thread_data();
         if (!thread_data->clipping_cursor || thread_data->clip_window != window) return;
-        NtUserSendHardwareInput( hwnd, SEND_HWMSG_NO_RAW, input, 0 );
+        NtUserSendHardwareInput( hwnd, mouse_input_flags(), input, 0 );
         return;
     }
 
@@ -667,7 +678,7 @@ static void send_mouse_input( HWND hwnd, Window window, unsigned int state, INPU
         SERVER_END_REQ;
     }
 
-    NtUserSendHardwareInput( hwnd, SEND_HWMSG_NO_RAW, input, 0 );
+    NtUserSendHardwareInput( hwnd, mouse_input_flags(), input, 0 );
 }
 
 #ifdef SONAME_LIBXCURSOR
@@ -1606,7 +1617,7 @@ void move_resize_window( HWND hwnd, int dir, POINT pos )
             input.mi.dwFlags     = button_up_flags[button - 1] | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
             input.mi.time        = NtGetTickCount();
             input.mi.dwExtraInfo = 0;
-            NtUserSendHardwareInput( hwnd, SEND_HWMSG_NO_RAW, &input, 0 );
+            NtUserSendHardwareInput( hwnd, mouse_input_flags(), &input, 0 );
         }
 
         while (NtUserPeekMessage( &msg, 0, 0, 0, PM_REMOVE ))
