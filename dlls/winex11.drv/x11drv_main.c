@@ -66,7 +66,11 @@ Window root_window;
 const char *x11drv_gpu_info = NULL;
 BOOL usexvidmode = FALSE;
 BOOL usexrandr = FALSE;
+#ifdef SONAME_LIBXCOMPOSITE
 BOOL usexcomposite = TRUE;
+#else
+BOOL usexcomposite = FALSE;
+#endif
 BOOL use_egl = TRUE;
 BOOL use_take_focus = TRUE;
 BOOL use_primary_selection = FALSE;
