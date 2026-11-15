@@ -454,9 +454,23 @@ static void X11DRV_client_surface_present( struct client_surface *client, HDC hd
     window = X11DRV_get_whole_window( toplevel );
     if (NtUserGetPresentRect( toplevel, &rect_dst, -1 /* raw dpi */ ))
     {
+        UINT dpi = NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI );
+
         region = 0; /* window is exclusive fullscreen, ignore everything else */
-        if (toplevel != hwnd) return; /* toplevel is exclusive fullscreen, don't present */
-        NtUserMapWindowPoints( 0, toplevel, (POINT *)&rect_dst, 2, NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI ) );
+        NtUserMapWindowPoints( 0, toplevel, (POINT *)&rect_dst, 2, dpi );
+        if (toplevel != hwnd)
+        {
+            /* A child of an exclusive fullscreen window, e.g. a DirectShow video window over a
+             * DirectDraw game: present it at its place in the fullscreen image, like children of
+             * other windows, instead of dropping its frames. Its coordinates are display mode
+             * coordinates, like the toplevel's image. */
+            RECT child;
+
+            if (!NtUserGetClientRect( hwnd, &child, dpi )) goto done;
+            NtUserMapWindowPoints( hwnd, toplevel, (POINT *)&child, 2, dpi );
+            OffsetRect( &child, rect_dst.left, rect_dst.top );
+            rect_dst = child;
+        }
     }
     else
     {
