@@ -76,6 +76,7 @@ struct esync
     LONG type;
     int fd;
     void *shm;
+    LONG waiters;   /* threads of this process blocked in poll() on this object */
 };
 
 struct semaphore
@@ -186,6 +187,7 @@ static struct esync *add_to_list( HANDLE handle, enum esync_type type, int fd, v
     {
         esync_list[entry][idx].fd = fd;
         esync_list[entry][idx].shm = shm;
+        esync_list[entry][idx].waiters = 0;
     }
     return &esync_list[entry][idx];
 }
@@ -621,6 +623,28 @@ NTSTATUS esync_pulse_event( HANDLE handle )
      * side is the better thing to do... */
     NtYieldExecution();
 
+    /* A waiter only sees the pulse if it gets back from poll() while the event
+     * is still set, and a single yield often isn't enough for that (notably
+     * under emulation), so the waiter sleeps forever. Keep the event set until
+     * the threads of this process waiting on it have woken up, or for an
+     * auto-reset event until one of them took it. */
+    if (ReadNoFence( &obj->waiters ))
+    {
+        struct pollfd pfd = { .fd = obj->fd, .events = POLLIN };
+        LARGE_INTEGER start, now;
+        unsigned int spins = 0;
+
+        NtQuerySystemTime( &start );
+        while (ReadNoFence( &obj->waiters ))
+        {
+            if (obj->type == ESYNC_AUTO_EVENT && poll( &pfd, 1, 0 ) <= 0) break;
+            NtQuerySystemTime( &now );
+            if (now.QuadPart - start.QuadPart > TICKSPERSEC / 10) break;
+            if (spins++ < 100) NtYieldExecution();
+            else usleep( 100 );
+        }
+    }
+
     read( obj->fd, &value, sizeof(value) );
 
     return STATUS_SUCCESS;
@@ -993,7 +1017,12 @@ static NTSTATUS __esync_wait_objects( unsigned int count, const HANDLE *handles,
 
         while (1)
         {
+            /* let esync_pulse_event() know that someone is waiting */
+            for (i = 0; i < count; i++)
+                if (objs[i]) InterlockedIncrement( &objs[i]->waiters );
             ret = do_poll( fds, pollcount, timeout ? &end : NULL );
+            for (i = 0; i < count; i++)
+                if (objs[i]) InterlockedDecrement( &objs[i]->waiters );
             if (ret > 0)
             {
                 /* We must check this first! The server may set an event that
