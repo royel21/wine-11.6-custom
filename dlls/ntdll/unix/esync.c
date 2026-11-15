@@ -176,8 +176,9 @@ static struct esync *add_to_list( HANDLE handle, enum esync_type type, int fd, v
         if (!entry) esync_list[0] = esync_list_initial_block;
         else
         {
-            void *ptr = anon_mmap_alloc( ESYNC_LIST_BLOCK_SIZE * sizeof(struct esync),
-                                         PROT_READ | PROT_WRITE );
+            /* the whole 64k: the entries don't fill it exactly when their size isn't a power
+             * of two, and anon_mmap_alloc() needs a multiple of the page size */
+            void *ptr = anon_mmap_alloc( 65536, PROT_READ | PROT_WRITE );
             if (ptr == MAP_FAILED) return FALSE;
             esync_list[entry] = ptr;
         }
