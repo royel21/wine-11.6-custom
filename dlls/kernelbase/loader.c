@@ -322,6 +322,18 @@ DWORD WINAPI DECLSPEC_HOTPATCH GetModuleFileNameW( HMODULE module, LPWSTR filena
            if there's space, otherwise: */
         if (status == STATUS_BUFFER_TOO_SMALL && size > 0)
             filename[size - 1] = 0;
+#ifdef __i386__
+        /* 32-bit system modules live in syswow64 on 64-bit Windows; some copy
+         * protections compare against GetSystemWow64Directory(). */
+        if (is_wow64)
+        {
+            static const WCHAR sys32[] = L"C:\\windows\\system32\\";
+            const DWORD prefix_len = ARRAY_SIZE(sys32) - 1;
+
+            if (len > prefix_len && !wcsnicmp( filename, sys32, prefix_len ))
+                memcpy( filename + 11, L"syswow64", 8 * sizeof(WCHAR) );
+        }
+#endif
     }
     SetLastError( RtlNtStatusToDosError( status ));
 done:
