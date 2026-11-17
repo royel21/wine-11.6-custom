@@ -556,6 +556,35 @@ static BOOL x11drv_egl_surface_create( HWND hwnd, int format, struct opengl_draw
 /**********************************************************************
  *           X11DRV_OpenglInit
  */
+/* Check that the X11 EGL display offers at least one desktop OpenGL config.
+ * Some setups ship a libEGL that loads fine but has no usable configs for the
+ * X server, while GLX through libGL works. */
+static BOOL x11drv_egl_has_opengl_configs( const struct opengl_funcs *opengl_funcs )
+{
+    EGLint major, minor, count = 0, render, i;
+    EGLConfig *configs;
+    EGLDisplay display;
+    BOOL ret = FALSE;
+
+    if (!(display = opengl_funcs->p_eglGetPlatformDisplay( EGL_PLATFORM_X11_KHR, gdi_display, NULL ))) return FALSE;
+    if (!opengl_funcs->p_eglInitialize( display, &major, &minor )) return FALSE;
+    if (!opengl_funcs->p_eglGetConfigs( display, NULL, 0, &count ) || !count) return FALSE;
+    if (!(configs = malloc( count * sizeof(*configs) ))) return FALSE;
+
+    if (opengl_funcs->p_eglGetConfigs( display, configs, count, &count ))
+    {
+        for (i = 0; i < count && !ret; i++)
+        {
+            if (opengl_funcs->p_eglGetConfigAttrib( display, configs[i], EGL_RENDERABLE_TYPE, &render ) &&
+                (render & EGL_OPENGL_BIT))
+                ret = TRUE;
+        }
+    }
+
+    free( configs );
+    return ret;
+}
+
 UINT X11DRV_OpenGLInit( UINT version, const struct opengl_funcs *opengl_funcs, const struct opengl_driver_funcs **driver_funcs )
 {
     int error_base, event_base;
@@ -567,7 +596,9 @@ UINT X11DRV_OpenGLInit( UINT version, const struct opengl_funcs *opengl_funcs, c
     }
     funcs = opengl_funcs;
 
-    if (use_egl && opengl_funcs->egl_handle)
+    if (use_egl && opengl_funcs->egl_handle && !x11drv_egl_has_opengl_configs( opengl_funcs ))
+        WARN( "EGL has no OpenGL configs for this display, using GLX\n" );
+    else if (use_egl && opengl_funcs->egl_handle)
     {
         TRACE( "Using EGL OpenGL backend\n" );
         x11drv_driver_funcs = **driver_funcs;
