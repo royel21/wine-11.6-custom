@@ -38,6 +38,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(quartz);
 
 static const GUID MEDIASUBTYPE_CVID = {mmioFOURCC('c','v','i','d'), 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
 static const GUID MEDIASUBTYPE_IV50 = {mmioFOURCC('I','V','5','0'), 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
+static const GUID MEDIASUBTYPE_IV32 = {mmioFOURCC('I','V','3','2'), 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
 static const GUID MEDIASUBTYPE_VC1S = {mmioFOURCC('V','C','1','S'), 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
 static const GUID MEDIASUBTYPE_MP3  = {WAVE_FORMAT_MPEGLAYER3, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
 static const GUID MEDIASUBTYPE_WMV_Unknown = {0x7ce12ca9, 0xbfbf, 0x43d9, {0x9d, 0x00, 0x82, 0xb8, 0xed, 0x54, 0x31, 0x6b}};
@@ -663,6 +664,10 @@ static bool amt_from_wg_format_video_indeo(AM_MEDIA_TYPE *mt, const struct wg_fo
     {
         mt->subtype = MEDIASUBTYPE_IV50;
     }
+    else if (format->u.video.version == 3)
+    {
+        mt->subtype = MEDIASUBTYPE_IV32;
+    }
     else
     {
         FIXME("Unhandled version %u.\n", format->u.video.version);
@@ -1109,6 +1114,8 @@ static bool amt_to_wg_format_video_indeo(const AM_MEDIA_TYPE *mt, struct wg_form
     format->major_type = WG_MAJOR_TYPE_VIDEO_CINEPAK;
     if (IsEqualGUID(&mt->subtype, &MEDIASUBTYPE_IV50))
         format->u.video.version = 5;
+    else if (IsEqualGUID(&mt->subtype, &MEDIASUBTYPE_IV32))
+        format->u.video.version = 3;
     format->u.video.width = video_format->bmiHeader.biWidth;
     format->u.video.height = video_format->bmiHeader.biHeight;
     format->u.video.fps_n = 10000000;
@@ -1200,7 +1207,7 @@ bool amt_to_wg_format(const AM_MEDIA_TYPE *mt, struct wg_format *format)
     {
         if (IsEqualGUID(&mt->subtype, &MEDIASUBTYPE_CVID))
             return amt_to_wg_format_video_cinepak(mt, format);
-        if (IsEqualGUID(&mt->subtype, &MEDIASUBTYPE_IV50))
+        if (IsEqualGUID(&mt->subtype, &MEDIASUBTYPE_IV50) || IsEqualGUID(&mt->subtype, &MEDIASUBTYPE_IV32))
             return amt_to_wg_format_video_indeo(mt, format);
         if (IsEqualGUID(&mt->subtype, &MEDIASUBTYPE_WMV1)
                 || IsEqualGUID(&mt->subtype, &MEDIASUBTYPE_WMV2)

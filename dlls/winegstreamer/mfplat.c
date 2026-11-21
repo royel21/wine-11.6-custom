@@ -42,6 +42,7 @@ DEFINE_MEDIATYPE_GUID(MFAudioFormat_RAW_AAC,WAVE_FORMAT_RAW_AAC1);
 DEFINE_MEDIATYPE_GUID(MFAudioFormat_XMAudio2, 0x0166);
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_VC1S,MAKEFOURCC('V','C','1','S'));
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_IV50,MAKEFOURCC('I','V','5','0'));
+DEFINE_MEDIATYPE_GUID(MFVideoFormat_IV32,MAKEFOURCC('I','V','3','2'));
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_ABGR32,D3DFMT_A8B8G8R8);
 DEFINE_GUID(MEDIASUBTYPE_WMV_Unknown, 0x7ce12ca9,0xbfbf,0x43d9,0x9d,0x00,0x82,0xb8,0xed,0x54,0x31,0x6b);
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_theora,MAKEFOURCC('t','h','e','o'));
@@ -913,6 +914,8 @@ void mf_media_type_to_wg_format(IMFMediaType *type, struct wg_format *format)
             mf_media_type_to_wg_format_video_h264(type, format);
         else if (IsEqualGUID(&subtype, &MFVideoFormat_IV50))
             mf_media_type_to_wg_format_video_indeo(type, 5, format);
+        else if (IsEqualGUID(&subtype, &MFVideoFormat_IV32))
+            mf_media_type_to_wg_format_video_indeo(type, 3, format);
         else if (IsEqualGUID(&subtype, &MEDIASUBTYPE_WMV1)
                 || IsEqualGUID(&subtype, &MEDIASUBTYPE_WMV2)
                 || IsEqualGUID(&subtype, &MEDIASUBTYPE_WMVA)

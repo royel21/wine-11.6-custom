@@ -60,6 +60,7 @@ DEFINE_MEDIATYPE_GUID(MFAudioFormat_MSAudio1,WAVE_FORMAT_MSAUDIO1);
 
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_CVID,MAKEFOURCC('c','v','i','d'));
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_IV50,MAKEFOURCC('I','V','5','0'));
+DEFINE_MEDIATYPE_GUID(MFVideoFormat_IV32,MAKEFOURCC('I','V','3','2'));
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_VC1S,MAKEFOURCC('V','C','1','S'));
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_ABGR32,D3DFMT_A8B8G8R8);
 
@@ -315,13 +316,13 @@ static void init_caps_from_video_wmv(GstCaps *caps, const MFVIDEOFORMAT *format,
     gst_caps_set_simple(caps, "format", G_TYPE_STRING, wmv_format, NULL);
 }
 
-static void init_caps_from_video_indeo(GstCaps *caps, const MFVIDEOFORMAT *format, UINT format_size)
+static void init_caps_from_video_indeo(GstCaps *caps, const MFVIDEOFORMAT *format, UINT format_size, int version)
 {
     init_caps_codec_data(caps, format + 1, format_size - sizeof(*format));
 
     gst_structure_remove_field(gst_caps_get_structure(caps, 0), "format");
     gst_structure_set_name(gst_caps_get_structure(caps, 0), "video/x-indeo");
-    gst_caps_set_simple(caps, "indeoversion", G_TYPE_INT, 5, NULL);
+    gst_caps_set_simple(caps, "indeoversion", G_TYPE_INT, version, NULL);
 }
 
 static void init_caps_from_video_mpeg(GstCaps *caps, const struct mpeg_video_format *format, UINT format_size)
@@ -352,7 +353,9 @@ static void init_caps_from_video_subtype(GstCaps *caps, const GUID *subtype, con
     if (IsEqualGUID(subtype, &MFVideoFormat_WVC1))
         return init_caps_from_video_wmv(caps, format, format_size, 3, "WVC1");
     if (IsEqualGUID(subtype, &MFVideoFormat_IV50))
-        return init_caps_from_video_indeo(caps, format, format_size);
+        return init_caps_from_video_indeo(caps, format, format_size, 5);
+    if (IsEqualGUID(subtype, &MFVideoFormat_IV32))
+        return init_caps_from_video_indeo(caps, format, format_size, 3);
     if (IsEqualGUID(subtype, &MEDIASUBTYPE_MPEG1Payload))
         return init_caps_from_video_mpeg(caps, format, format_size);
 

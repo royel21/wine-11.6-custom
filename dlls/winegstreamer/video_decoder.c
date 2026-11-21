@@ -1749,9 +1749,11 @@ HRESULT h264_decoder_create(REFIID riid, void **out)
 }
 
 extern GUID MFVideoFormat_IV50;
+extern GUID MFVideoFormat_IV32;
 static const GUID *const iv50_decoder_input_types[] =
 {
     &MFVideoFormat_IV50,
+    &MFVideoFormat_IV32,
 };
 static const GUID *const iv50_decoder_output_types[] =
 {

@@ -368,7 +368,7 @@ static void wg_format_from_caps_video_indeo(struct wg_format *format, const GstC
         GST_WARNING("Missing \"indeoversion\" value.");
         return;
     }
-    if (version != 5)
+    if (version != 3 && version != 5)
     {
         GST_FIXME("Unknown version %d.", version);
         return;
