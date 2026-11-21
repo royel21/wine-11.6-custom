@@ -1054,6 +1054,16 @@ static bool stream_create_post_processing_elements(GstPad *pad, struct wg_parser
          * certain fields while leaving others untouched. */
         gst_util_set_object_arg(G_OBJECT(element), "caps", "video/x-raw,colorimetry=0:0:0:0");
 
+        /* decodebin considers many YUV formats to be "raw" (e.g. YUV9 from the Indeo 3
+         * decoder), but deinterlace and videoflip can't handle all of them, and some
+         * quartz filters can't either. Add a videoconvert to swap color spaces. */
+        if (!(element = create_element("videoconvert", "base"))
+                || !append_element(parser->container, element, &first, &last))
+            return false;
+
+        /* Let GStreamer choose a default number of threads. */
+        gst_util_set_object_arg(G_OBJECT(element), "n-threads", "0");
+
         /* DirectShow can express interlaced video, but downstream filters can't
          * necessarily consume it. In particular, the video renderer can't. */
         if (!(element = create_element("deinterlace", "good"))
