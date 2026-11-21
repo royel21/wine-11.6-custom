@@ -1253,6 +1253,8 @@ static HRESULT WINAPI windowless_control_GetNativeVideoSize(IVMRWindowlessContro
 
     if (!width || !height)
         return E_POINTER;
+    if (!filter->renderer.sink.pin.peer)
+        return VFW_E_NOT_CONNECTED;
 
     *width = bitmap_header->biWidth;
     *height = bitmap_header->biHeight;
