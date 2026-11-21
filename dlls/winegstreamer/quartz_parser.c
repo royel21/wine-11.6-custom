@@ -2479,11 +2479,28 @@ static BOOL avi_splitter_filter_init_gst(struct parser *filter)
     return TRUE;
 }
 
+/* The AVI splitter decodes streams that it has no DirectShow media type for (e.g.
+ * MS-MPEG4 video); offer and accept all raw formats for those, like the decodebin
+ * parser does, so that renderers needing RGB (e.g. VMR9 on a d3d9 without
+ * 24-bit surfaces) can connect without another converter. */
+static bool avi_splitter_stream_is_decoded_yuv(struct parser_source *pin)
+{
+    struct wg_format format;
+
+    wg_parser_stream_get_current_format(pin->wg_stream, &format);
+    return format.major_type == WG_MAJOR_TYPE_VIDEO
+            && format.u.video.format != WG_VIDEO_FORMAT_UNKNOWN
+            && !wg_video_format_is_rgb(format.u.video.format);
+}
+
 static HRESULT avi_splitter_source_query_accept(struct parser_source *pin, const AM_MEDIA_TYPE *mt)
 {
     struct wg_format format;
     AM_MEDIA_TYPE pad_mt;
     HRESULT hr;
+
+    if (avi_splitter_stream_is_decoded_yuv(pin))
+        return decodebin_parser_source_query_accept(pin, mt);
 
     wg_parser_stream_get_current_format(pin->wg_stream, &format);
     if (wg_video_format_is_rgb(format.u.video.format))
@@ -2512,6 +2529,9 @@ static HRESULT avi_splitter_source_get_media_type(struct parser_source *pin,
         unsigned int index, AM_MEDIA_TYPE *mt)
 {
     struct wg_format format;
+
+    if (avi_splitter_stream_is_decoded_yuv(pin))
+        return decodebin_parser_source_get_media_type(pin, index, mt);
 
     if (index > 1)
         return VFW_S_NO_MORE_ITEMS;
