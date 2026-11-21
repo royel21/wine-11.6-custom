@@ -189,12 +189,51 @@ MMRESULT WINMM_CheckCallback(DWORD_PTR dwCallback, DWORD fdwOpen, BOOL mixer)
     return MMSYSERR_NOERROR;
 }
 
+/* Without aux devices from the audio driver, expose one for CD audio: old games look for
+ * it before playing CD music (and sometimes any sound), and CD audio is played by Wine. */
+static DWORD cd_aux_volume = 0xffffffff;
+
+static BOOL use_cd_aux(UINT_PTR id)
+{
+    return !MMDRV_GetNum(MMDRV_AUX) && id == 0;
+}
+
+static UINT cd_aux_message(UINT msg, DWORD_PTR dw1, DWORD_PTR dw2)
+{
+    switch (msg)
+    {
+    case AUXDM_GETDEVCAPS:
+    {
+        AUXCAPSW caps = {0};
+
+        if (!dw1) return MMSYSERR_INVALPARAM;
+        caps.wMid = MM_MICROSOFT;
+        caps.vDriverVersion = 0x0100;
+        wcscpy(caps.szPname, L"CD Audio");
+        caps.wTechnology = AUXCAPS_CDAUDIO;
+        caps.dwSupport = AUXCAPS_VOLUME | AUXCAPS_LRVOLUME;
+        memcpy((void *)dw1, &caps, min(dw2, sizeof(caps)));
+        return MMSYSERR_NOERROR;
+    }
+    case AUXDM_GETVOLUME:
+        if (!dw1) return MMSYSERR_INVALPARAM;
+        *(DWORD *)dw1 = cd_aux_volume;
+        return MMSYSERR_NOERROR;
+    case AUXDM_SETVOLUME:
+        cd_aux_volume = dw1;
+        return MMSYSERR_NOERROR;
+    }
+    return MMSYSERR_NOTSUPPORTED;
+}
+
 /**************************************************************************
  * 				auxGetNumDevs		[WINMM.@]
  */
 UINT WINAPI auxGetNumDevs(void)
 {
-    return MMDRV_GetNum(MMDRV_AUX);
+    UINT count = MMDRV_GetNum(MMDRV_AUX);
+
+    return count ? count : 1;
 }
 
 /**************************************************************************
@@ -208,6 +247,8 @@ UINT WINAPI auxGetDevCapsW(UINT_PTR uDeviceID, LPAUXCAPSW lpCaps, UINT uSize)
 
     if (lpCaps == NULL)	return MMSYSERR_INVALPARAM;
 
+    if (use_cd_aux(uDeviceID))
+        return cd_aux_message(AUXDM_GETDEVCAPS, (DWORD_PTR)lpCaps, uSize);
     if ((wmld = MMDRV_Get((HANDLE)uDeviceID, MMDRV_AUX, TRUE)) == NULL)
 	return MMSYSERR_BADDEVICEID;
     return MMDRV_Message(wmld, AUXDM_GETDEVCAPS, (DWORD_PTR)lpCaps, uSize);
@@ -249,6 +290,8 @@ UINT WINAPI auxGetVolume(UINT uDeviceID, DWORD* lpdwVolume)
 
     TRACE("(%04X, %p) !\n", uDeviceID, lpdwVolume);
 
+    if (use_cd_aux(uDeviceID))
+        return cd_aux_message(AUXDM_GETVOLUME, (DWORD_PTR)lpdwVolume, 0);
     if ((wmld = MMDRV_Get((HANDLE)(DWORD_PTR)uDeviceID, MMDRV_AUX, TRUE)) == NULL)
 	return MMSYSERR_INVALHANDLE;
     return MMDRV_Message(wmld, AUXDM_GETVOLUME, (DWORD_PTR)lpdwVolume, 0L);
@@ -263,6 +306,8 @@ UINT WINAPI auxSetVolume(UINT uDeviceID, DWORD dwVolume)
 
     TRACE("(%04X, %lu) !\n", uDeviceID, dwVolume);
 
+    if (use_cd_aux(uDeviceID))
+        return cd_aux_message(AUXDM_SETVOLUME, dwVolume, 0);
     if ((wmld = MMDRV_Get((HANDLE)(DWORD_PTR)uDeviceID, MMDRV_AUX, TRUE)) == NULL)
 	return MMSYSERR_INVALHANDLE;
     return MMDRV_Message(wmld, AUXDM_SETVOLUME, dwVolume, 0L);
@@ -275,6 +320,8 @@ UINT WINAPI auxOutMessage(UINT uDeviceID, UINT uMessage, DWORD_PTR dw1, DWORD_PT
 {
     LPWINE_MLD		wmld;
 
+    if (use_cd_aux(uDeviceID))
+        return cd_aux_message(uMessage, dw1, dw2);
     if ((wmld = MMDRV_Get((HANDLE)(DWORD_PTR)uDeviceID, MMDRV_AUX, TRUE)) == NULL)
 	return MMSYSERR_INVALHANDLE;
 
