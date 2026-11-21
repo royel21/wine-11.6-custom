@@ -1220,6 +1220,35 @@ static void create_progman_window(void)
                      0, 0, 0, 0, 0, 0, 0, NULL );
 }
 
+/* Windows 9x kept the display DPI ("small fonts" = 96) in HKLM\Config\0001\Display\Settings;
+ * some old programs read it there and refuse to run without it. */
+static void set_win9x_display_dpi(void)
+{
+    static const WCHAR *names[] = {L"DPILogicalX", L"DPILogicalY", L"DPIPhysicalX", L"DPIPhysicalY"};
+    WCHAR value[16];
+    unsigned int i;
+    HKEY key;
+    HDC hdc;
+    int dpi;
+
+    if (RegCreateKeyExW( HKEY_LOCAL_MACHINE, L"Config\\0001\\Display\\Settings", 0, NULL, 0,
+                         KEY_QUERY_VALUE | KEY_SET_VALUE, NULL, &key, NULL ))
+        return;
+
+    hdc = GetDC( 0 );
+    dpi = GetDeviceCaps( hdc, LOGPIXELSY );
+    ReleaseDC( 0, hdc );
+    if (dpi <= 0) dpi = 96;
+    swprintf( value, ARRAY_SIZE(value), L"%d", dpi );
+
+    for (i = 0; i < ARRAY_SIZE(names); i++)
+    {
+        if (RegQueryValueExW( key, names[i], NULL, NULL, NULL, NULL ))
+            RegSetValueExW( key, names[i], 0, REG_SZ, (BYTE *)value, (wcslen( value ) + 1) * sizeof(WCHAR) );
+    }
+    RegCloseKey( key );
+}
+
 /* main desktop management function */
 void manage_desktop( WCHAR *arg )
 {
@@ -1332,6 +1361,7 @@ void manage_desktop( WCHAR *arg )
             pShellDDEInit( TRUE );
         }
         if (!nogui) create_progman_window();
+        set_win9x_display_dpi();
     }
 
     /* if we have a command line, execute it */
