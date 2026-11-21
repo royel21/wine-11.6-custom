@@ -36,9 +36,21 @@ WINE_DEFAULT_DEBUG_CHANNEL(ir50_32);
 static HINSTANCE IR50_32_hModule;
 
 #define IV50_MAGIC mmioFOURCC('I','V','5','0')
+#define IV31_MAGIC mmioFOURCC('I','V','3','1')
+#define IV32_MAGIC mmioFOURCC('I','V','3','2')
 #define compare_fourcc(fcc1, fcc2) (((fcc1)^(fcc2))&~0x20202020)
 
 DEFINE_MEDIATYPE_GUID(MFVideoFormat_IV50, MAKEFOURCC('I','V','5','0'));
+DEFINE_MEDIATYPE_GUID(MFVideoFormat_IV32, MAKEFOURCC('I','V','3','2'));
+
+/* Indeo 3 video is decoded by the same GStreamer based decoder */
+static const GUID *get_input_subtype( DWORD compression )
+{
+    if (!compare_fourcc(compression, IV50_MAGIC)) return &MFVideoFormat_IV50;
+    if (!compare_fourcc(compression, IV32_MAGIC) || !compare_fourcc(compression, IV31_MAGIC))
+        return &MFVideoFormat_IV32;
+    return NULL;
+}
 
 static inline UINT64
 make_uint64( UINT32 high, UINT32 low )
@@ -74,7 +86,7 @@ static LRESULT decompress_query( ICDECOMPRESSEX *params )
     TRACE("in->compr   = %#lx\n", in->bmiHeader.biCompression);
     TRACE("in offset (%d,%d), size %dx%d\n", params->xSrc, params->ySrc, params->dxSrc, params->dySrc);
 
-    if (compare_fourcc(in->bmiHeader.biCompression, IV50_MAGIC))
+    if (!get_input_subtype(in->bmiHeader.biCompression))
     {
         TRACE("can't do %#lx compression\n", in->bmiHeader.biCompression);
         return ICERR_BADFORMAT;
@@ -130,7 +142,7 @@ IV50_DecompressGetFormat( LPBITMAPINFO in, LPBITMAPINFO out )
 {
     TRACE("ICM_DECOMPRESS_GETFORMAT %p %p\n", in, out);
 
-    if (compare_fourcc(in->bmiHeader.biCompression, IV50_MAGIC))
+    if (!get_input_subtype(in->bmiHeader.biCompression))
         return ICERR_BADFORMAT;
 
     if ( out )
@@ -187,7 +199,7 @@ static LRESULT decompress_begin( IMFTransform *decoder, ICDECOMPRESSEX *params )
     }
 
     if ( FAILED(IMFMediaType_SetGUID( input_type, &MF_MT_MAJOR_TYPE, &MFMediaType_Video )) ||
-         FAILED(IMFMediaType_SetGUID( input_type, &MF_MT_SUBTYPE, &MFVideoFormat_IV50 )) )
+         FAILED(IMFMediaType_SetGUID( input_type, &MF_MT_SUBTYPE, get_input_subtype( in->bmiHeader.biCompression ) )) )
         goto done;
     if ( FAILED(IMFMediaType_SetUINT64(
                     input_type, &MF_MT_FRAME_SIZE,
