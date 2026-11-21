@@ -659,6 +659,10 @@ static	LRESULT	ADPCM_FormatSuggest(PACMDRVFORMATSUGGEST adfs)
 	adfs->pwfxDst->nChannels = adfs->pwfxSrc->nChannels;
     if (!(adfs->fdwSuggest & ACM_FORMATSUGGESTF_NSAMPLESPERSEC))
         adfs->pwfxDst->nSamplesPerSec = adfs->pwfxSrc->nSamplesPerSec;
+    /* the codec doesn't resample or change the channel count, see ADPCM_StreamOpen */
+    if (adfs->pwfxDst->nChannels != adfs->pwfxSrc->nChannels ||
+        adfs->pwfxDst->nSamplesPerSec != adfs->pwfxSrc->nSamplesPerSec)
+        return ACMERR_NOTPOSSIBLE;
 
     if (!(adfs->fdwSuggest & ACM_FORMATSUGGESTF_WBITSPERSAMPLE))
     {
