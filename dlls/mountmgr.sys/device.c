@@ -1969,6 +1969,18 @@ static NTSTATUS WINAPI harddisk_ioctl(DEVICE_OBJECT* device, IRP* irp)
         status = STATUS_SUCCESS;
         break;
     }
+    case IOCTL_STORAGE_CHECK_VERIFY:
+    case IOCTL_STORAGE_CHECK_VERIFY2:
+    case IOCTL_DISK_CHECK_VERIFY:
+    case IOCTL_CDROM_CHECK_VERIFY:
+        /* some programs check that the drive they run from is ready; fixed disks always
+         * are, other drives when something is mounted on them */
+        irp->IoStatus.Information = 0;
+        if (dev->devnum.DeviceType == FILE_DEVICE_DISK || dev->unix_mount)
+            status = STATUS_SUCCESS;
+        else
+            status = STATUS_NO_MEDIA_IN_DEVICE;
+        break;
     case IOCTL_STORAGE_GET_DEVICE_NUMBER:
     {
         DWORD len = min(sizeof(dev->devnum), irpsp->Parameters.DeviceIoControl.OutputBufferLength);
