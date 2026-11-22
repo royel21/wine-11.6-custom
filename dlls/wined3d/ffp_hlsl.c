@@ -381,10 +381,12 @@ static bool ffp_hlsl_generate_vertex_shader(const struct wined3d_ffp_vs_settings
             break;
 
         case WINED3D_FFP_VS_FOG_DEPTH:
-            if (settings->transformed)
+            if (settings->ortho_fog)
+                shader_addline(buffer, "    o.fogcoord = o.pos.z;\n");
+            else if (settings->transformed)
                 shader_addline(buffer, "    o.fogcoord = ec_pos.z;\n");
             else
-                shader_addline(buffer, "    o.fogcoord = abs(o.pos.z);\n");
+                shader_addline(buffer, "    o.fogcoord = abs(ec_pos.z);\n");
             break;
     }
 

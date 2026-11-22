@@ -62,11 +62,14 @@ struct shader_spirv_compile_arguments
             struct vkd3d_shader_varying_map varying_map[MAX_SM1_INTER_STAGE_VARYINGS];
             unsigned int varying_count;
             uint8_t clip_planes;
+            uint8_t fog_source;
         } vs;
         struct
         {
             struct ps_compile_args args;
             unsigned int sample_count;
+            bool ffp_fog;
+            uint8_t fog_mode;
         } fs;
     } u;
 };
@@ -105,7 +108,7 @@ struct wined3d_shader_spirv_compile_args
     struct vkd3d_shader_spirv_target_info spirv_target;
     struct vkd3d_shader_parameter_info parameter_info;
     enum vkd3d_shader_spirv_extension extensions[1];
-    struct vkd3d_shader_parameter1 parameters[12];
+    struct vkd3d_shader_parameter1 parameters[13];
     unsigned int ps_alpha_swizzle[WINED3D_MAX_RENDER_TARGETS];
 };
 
@@ -117,6 +120,43 @@ struct wined3d_shader_spirv_shader_interface
 
 static void shader_spirv_handle_instruction(const struct wined3d_shader_instruction *ins)
 {
+}
+
+/* Fixed-function fog applies to vertex shaders before 3.0 and pixel shaders
+ * before 3.0. vkd3d-shader adds the fog varying when the parameters are
+ * present, so the same parameters must also be given when scanning. */
+static bool shader_spirv_ps_uses_ffp_fog(const struct wined3d_shader *shader)
+{
+    return shader->source_type == VKD3D_SHADER_SOURCE_D3D_BYTECODE
+            && shader->reg_maps.shader_version.major < 3;
+}
+
+static enum vkd3d_shader_fog_source shader_spirv_get_fog_source(const struct wined3d_shader *shader,
+        const struct wined3d_state *state)
+{
+    if (shader->reg_maps.shader_version.major >= 3)
+        return VKD3D_SHADER_FOG_SOURCE_FOG;
+
+    /* The fixed-function replacement shader writes the fog coordinate itself. */
+    if (shader->is_ffp_vs || !state->extra_vs_args.pixel_fog)
+        return VKD3D_SHADER_FOG_SOURCE_FOG_OR_SPECULAR_W;
+
+    if (!state->extra_vs_args.ortho_fog)
+        return VKD3D_SHADER_FOG_SOURCE_W;
+    if (state->vertex_declaration && state->vertex_declaration->position_transformed)
+        return VKD3D_SHADER_FOG_SOURCE_FOG_OR_SPECULAR_W;
+    return VKD3D_SHADER_FOG_SOURCE_Z;
+}
+
+static enum vkd3d_shader_fog_fragment_mode shader_spirv_get_fog_fragment_mode(enum wined3d_ffp_ps_fog_mode fog)
+{
+    switch (fog)
+    {
+        case WINED3D_FFP_PS_FOG_LINEAR: return VKD3D_SHADER_FOG_FRAGMENT_LINEAR;
+        case WINED3D_FFP_PS_FOG_EXP:    return VKD3D_SHADER_FOG_FRAGMENT_EXP;
+        case WINED3D_FFP_PS_FOG_EXP2:   return VKD3D_SHADER_FOG_FRAGMENT_EXP2;
+        default:                        return VKD3D_SHADER_FOG_FRAGMENT_NONE;
+    }
 }
 
 static void shader_spirv_compile_arguments_init(struct shader_spirv_compile_arguments *args,
@@ -134,6 +174,8 @@ static void shader_spirv_compile_arguments_init(struct shader_spirv_compile_argu
                     state->vertex_declaration && state->vertex_declaration->position_transformed,
                     &args->u.fs.args, context);
             args->u.fs.sample_count = sample_count;
+            if ((args->u.fs.ffp_fog = shader_spirv_ps_uses_ffp_fog(shader)))
+                args->u.fs.fog_mode = shader_spirv_get_fog_fragment_mode(args->u.fs.args.fog);
             break;
 
         case WINED3D_SHADER_TYPE_VERTEX:
@@ -152,6 +194,7 @@ static void shader_spirv_compile_arguments_init(struct shader_spirv_compile_argu
             }
 
             args->u.vs.clip_planes = state->extra_vs_args.clip_planes;
+            args->u.vs.fog_source = shader_spirv_get_fog_source(shader, state);
             break;
         }
 
@@ -197,7 +240,12 @@ static void fill_vs_parameters(struct wined3d_shader_spirv_compile_args *vkd3d_a
     fill_buffer_parameter(&parameters[11], ffp_extra_binding, VKD3D_SHADER_PARAMETER_NAME_POINT_SIZE_MAX,
             VKD3D_SHADER_PARAMETER_DATA_TYPE_FLOAT32, offsetof(struct wined3d_ffp_vs_constants, point_clamp.max));
 
-    vkd3d_args->parameter_info.parameter_count = 12;
+    parameters[12].name = VKD3D_SHADER_PARAMETER_NAME_FOG_SOURCE;
+    parameters[12].type = VKD3D_SHADER_PARAMETER_TYPE_IMMEDIATE_CONSTANT;
+    parameters[12].data_type = VKD3D_SHADER_PARAMETER_DATA_TYPE_UINT32;
+    parameters[12].u.immediate_constant.u.u32 = compile_args->u.vs.fog_source;
+
+    vkd3d_args->parameter_info.parameter_count = 13;
     vkd3d_args->parameter_info.parameters = vkd3d_args->parameters;
 }
 
@@ -239,6 +287,23 @@ static void fill_ps_parameters(struct wined3d_shader_spirv_compile_args *vkd3d_a
         parameters[3].u.immediate_constant.u.u32 = compile_args->u.fs.args.pointsprite;
 
         vkd3d_args->parameter_info.parameter_count = 4;
+
+        if (compile_args->u.fs.ffp_fog)
+        {
+            parameters[4].name = VKD3D_SHADER_PARAMETER_NAME_FOG_FRAGMENT_MODE;
+            parameters[4].type = VKD3D_SHADER_PARAMETER_TYPE_IMMEDIATE_CONSTANT;
+            parameters[4].data_type = VKD3D_SHADER_PARAMETER_DATA_TYPE_UINT32;
+            parameters[4].u.immediate_constant.u.u32 = compile_args->u.fs.fog_mode;
+
+            fill_buffer_parameter(&parameters[5], ffp_extra_binding, VKD3D_SHADER_PARAMETER_NAME_FOG_COLOUR,
+                    VKD3D_SHADER_PARAMETER_DATA_TYPE_FLOAT32_VEC4, offsetof(struct wined3d_ffp_ps_constants, fog.colour));
+            fill_buffer_parameter(&parameters[6], ffp_extra_binding, VKD3D_SHADER_PARAMETER_NAME_FOG_END,
+                    VKD3D_SHADER_PARAMETER_DATA_TYPE_FLOAT32, offsetof(struct wined3d_ffp_ps_constants, fog.end));
+            fill_buffer_parameter(&parameters[7], ffp_extra_binding, VKD3D_SHADER_PARAMETER_NAME_FOG_SCALE,
+                    VKD3D_SHADER_PARAMETER_DATA_TYPE_FLOAT32, offsetof(struct wined3d_ffp_ps_constants, fog.scale));
+
+            vkd3d_args->parameter_info.parameter_count = 8;
+        }
     }
 }
 
@@ -814,6 +879,8 @@ static void shader_spirv_scan_shader(struct wined3d_shader *shader,
         struct vkd3d_shader_scan_signature_info *signature_info)
 {
     const struct shader_spirv_priv *priv = shader->device->shader_priv;
+    struct vkd3d_shader_parameter_info parameter_info;
+    struct vkd3d_shader_parameter1 fog_parameter;
     struct vkd3d_shader_compile_info info;
     char *messages;
     int ret;
@@ -830,6 +897,32 @@ static void shader_spirv_scan_shader(struct wined3d_shader *shader,
 
     info.type = VKD3D_SHADER_STRUCTURE_TYPE_COMPILE_INFO;
     info.next = descriptor_info;
+
+    /* Report the signatures with the fog varying that compilation adds, so
+     * that the varying map links it. */
+    fog_parameter.name = VKD3D_SHADER_PARAMETER_NAME_UNKNOWN;
+    fog_parameter.type = VKD3D_SHADER_PARAMETER_TYPE_IMMEDIATE_CONSTANT;
+    fog_parameter.data_type = VKD3D_SHADER_PARAMETER_DATA_TYPE_UINT32;
+    if (shader->reg_maps.shader_version.type == WINED3D_SHADER_TYPE_PIXEL && shader_spirv_ps_uses_ffp_fog(shader))
+    {
+        fog_parameter.name = VKD3D_SHADER_PARAMETER_NAME_FOG_FRAGMENT_MODE;
+        fog_parameter.u.immediate_constant.u.u32 = VKD3D_SHADER_FOG_FRAGMENT_NONE;
+    }
+    else if (shader->reg_maps.shader_version.type == WINED3D_SHADER_TYPE_VERTEX
+            && shader->source_type == VKD3D_SHADER_SOURCE_D3D_BYTECODE)
+    {
+        fog_parameter.name = VKD3D_SHADER_PARAMETER_NAME_FOG_SOURCE;
+        fog_parameter.u.immediate_constant.u.u32 = VKD3D_SHADER_FOG_SOURCE_Z;
+    }
+    if (fog_parameter.name != VKD3D_SHADER_PARAMETER_NAME_UNKNOWN)
+    {
+        parameter_info.type = VKD3D_SHADER_STRUCTURE_TYPE_PARAMETER_INFO;
+        parameter_info.next = info.next;
+        parameter_info.parameters = &fog_parameter;
+        parameter_info.parameter_count = 1;
+        info.next = &parameter_info;
+    }
+
     if (shader->source_type == VKD3D_SHADER_SOURCE_D3D_BYTECODE)
     {
         info.source.code = shader->function;

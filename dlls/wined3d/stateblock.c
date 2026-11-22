@@ -3031,6 +3031,8 @@ void CDECL wined3d_stateblock_apply_clear_state(struct wined3d_stateblock *state
             args.texture_transform_flags[i] = state->texture_states[i][WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS];
             args.texcoord_index[i] = state->texture_states[i][WINED3D_TSS_TEXCOORD_INDEX];
         }
+        /* The FFP replacement shaders are looked up from this state. */
+        context->state->extra_ps_args = args;
         wined3d_device_context_emit_set_extra_ps_args(context, &args);
     }
 }
@@ -4021,6 +4023,8 @@ void CDECL wined3d_device_apply_stateblock(struct wined3d_device *device,
         args.pixel_fog = (state->rs[WINED3D_RS_FOGTABLEMODE] != WINED3D_FOG_NONE);
         args.flat_shading = state->rs[WINED3D_RS_SHADEMODE] == WINED3D_SHADE_FLAT;
         args.ortho_fog = (proj->_14 == 0.0f && proj->_24 == 0.0f && proj->_34 == 0.0f && proj->_44 == 1.0f);
+        /* The FFP replacement shaders are looked up from this state. */
+        context->state->extra_vs_args = args;
         wined3d_device_context_emit_set_extra_vs_args(context, &args);
     }
 
@@ -4061,6 +4065,13 @@ void CDECL wined3d_device_apply_stateblock(struct wined3d_device *device,
                 fog.end = end;
                 fog.scale = 1.0f / (end - start);
             }
+
+            /* The Vulkan backend computes exponential fog as 2^-(scale * c)
+             * (or its square); the GLSL backend uses the density instead. */
+            if (state->rs[WINED3D_RS_FOGTABLEMODE] == WINED3D_FOG_EXP)
+                fog.scale = fog.density * 1.44269504f; /* log2(e) */
+            else if (state->rs[WINED3D_RS_FOGTABLEMODE] == WINED3D_FOG_EXP2)
+                fog.scale = fog.density * 1.20112241f; /* sqrt(log2(e)) */
         }
         else
         {
@@ -4099,7 +4110,8 @@ void CDECL wined3d_device_apply_stateblock(struct wined3d_device *device,
      * FFP pipeline cares about. The rest should eventually be removed from
      * those structs and left only in vs_compile_args / ps_compile_args. */
 
-    if (changed->ffp_vs_settings
+    /* The FFP replacement shaders also depend on the extra shader args. */
+    if ((changed->ffp_vs_settings || (changed->extra_vs_args && device->adapter->d3d_info.ffp_hlsl))
             && (!state->vs || !state->vertex_declaration || state->vertex_declaration->position_transformed))
     {
         if (device->adapter->d3d_info.ffp_hlsl)
@@ -4117,7 +4129,7 @@ void CDECL wined3d_device_apply_stateblock(struct wined3d_device *device,
         }
     }
 
-    if (changed->ffp_ps_settings && !state->ps)
+    if ((changed->ffp_ps_settings || (changed->extra_ps_args && device->adapter->d3d_info.ffp_hlsl)) && !state->ps)
     {
         if (device->adapter->d3d_info.ffp_hlsl)
         {
