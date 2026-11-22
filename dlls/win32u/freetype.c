@@ -3153,7 +3153,11 @@ static UINT freetype_get_glyph_outline( struct gdi_font *font, UINT glyph, UINT 
 
     vertical_metrics = (tategaki && FT_HAS_VERTICAL(ft_face));
 
-    if (matrices || format != GGO_BITMAP) load_flags |= FT_LOAD_NO_BITMAP;
+    /* Like GGO_BITMAP, the GGO_GRAYn formats return the embedded bitmap of the
+     * font when it has one for the size, as on Windows. */
+    if (matrices || (format != GGO_BITMAP && format != GGO_GRAY2_BITMAP &&
+                     format != GGO_GRAY4_BITMAP && format != GGO_GRAY8_BITMAP))
+        load_flags |= FT_LOAD_NO_BITMAP;
     if (vertical_metrics) load_flags |= FT_LOAD_VERTICAL_LAYOUT;
 
     err = pFT_Load_Glyph(ft_face, glyph, load_flags & FT_LOAD_NO_HINTING ? load_flags : load_flags | FT_LOAD_PEDANTIC);
@@ -3161,6 +3165,13 @@ static UINT freetype_get_glyph_outline( struct gdi_font *font, UINT glyph, UINT 
     {
         WARN("Failed to load glyph %#x, retrying without hinting. Error %#x.\n", glyph, err);
         load_flags |= FT_LOAD_NO_HINTING;
+        err = pFT_Load_Glyph(ft_face, glyph, load_flags);
+    }
+    /* only 1-bit embedded bitmaps are handled */
+    if (!err && format != GGO_BITMAP && ft_face->glyph->format == FT_GLYPH_FORMAT_BITMAP &&
+        ft_face->glyph->bitmap.pixel_mode != FT_PIXEL_MODE_MONO)
+    {
+        load_flags |= FT_LOAD_NO_BITMAP;
         err = pFT_Load_Glyph(ft_face, glyph, load_flags);
     }
 
