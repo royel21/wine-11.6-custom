@@ -4653,6 +4653,17 @@ static HRESULT WINAPI ddraw_surface7_SetClipper(IDirectDrawSurface7 *iface,
             IDirectDrawClipper_GetHWnd(iclipper, &clipWindow);
         }
 
+        /* In exclusive mode the primary covers the whole screen and a clipper window
+         * only limits where blits go. Keep presenting to the device window when the
+         * clipper window is one of its children; a child window's swapchain image
+         * isn't shown over the fullscreen window. */
+        if (clipWindow && (This->ddraw->cooperative_level & DDSCL_EXCLUSIVE)
+                && This->ddraw->d3d_window && IsChild(This->ddraw->d3d_window, clipWindow))
+        {
+            TRACE("Keeping the swapchain on the device window for child clipper window %p.\n", clipWindow);
+            clipWindow = NULL;
+        }
+
         if (clipWindow)
         {
             wined3d_swapchain_set_window(This->ddraw->wined3d_swapchain, clipWindow);
