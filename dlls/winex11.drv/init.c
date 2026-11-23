@@ -648,11 +648,20 @@ static INT X11DRV_ExtEscape( PHYSDEV dev, INT escape, INT in_count, LPCVOID in_d
                     XSetGraphicsExposures( gdi_display, physDev->gc, False );
                     if (physDev->exposures)
                     {
+                        /* The server generates the exposure events while it
+                         * processes the copies, so they are queued once XSync()
+                         * returns. Don't block for them: some X servers never
+                         * send NoExpose, which would hang the thread forever. */
+                        XSync( gdi_display, False );
                         for (;;)
                         {
                             XEvent event;
 
-                            XWindowEvent( gdi_display, physDev->drawable, ~0, &event );
+                            if (!XCheckWindowEvent( gdi_display, physDev->drawable, ~0, &event ))
+                            {
+                                WARN( "no NoExpose event received\n" );
+                                break;
+                            }
                             if (event.type == NoExpose) break;
                             if (event.type == GraphicsExpose)
                             {
