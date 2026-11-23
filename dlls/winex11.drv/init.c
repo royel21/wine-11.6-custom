@@ -388,12 +388,12 @@ static BOOL client_surface_embed_child( HWND hwnd, struct x11drv_client_surface 
     HWND toplevel = NtUserGetAncestor( hwnd, GA_ROOT );
     Window parent = 0;
     BOOL mapped;
-    RECT rect;
 
-    /* exclusive fullscreen windows may be scaled, their children are presented with the toplevel image */
+    /* this also covers children of exclusive fullscreen windows: the X window of the toplevel
+     * then has the size of its present rect, which is drawn unscaled, and child coordinates
+     * still map to it directly */
     if (offscreen && !usexcomposite && toplevel != hwnd &&
-        NtUserGetDpiForWindow( hwnd ) == NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI ) &&
-        !NtUserGetPresentRect( toplevel, &rect, -1 /* raw dpi */ ))
+        NtUserGetDpiForWindow( hwnd ) == NtUserGetWinMonitorDpi( hwnd, MDT_RAW_DPI ))
         parent = X11DRV_get_whole_window( toplevel );
 
     if (parent != surface->embed_parent)
