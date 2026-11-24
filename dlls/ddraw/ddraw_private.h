@@ -135,6 +135,9 @@ struct ddraw
 
     unsigned int frames;
     DWORD prev_frame_time;
+
+    /* performance counter value of the last vertical blank WaitForVerticalBlank() waited for */
+    LONGLONG last_vblank;
 };
 
 #define DDRAW_WINDOW_CLASS_NAME "DirectDrawDeviceWnd"

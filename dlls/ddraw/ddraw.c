@@ -2242,6 +2242,18 @@ static HRESULT WINAPI ddraw7_WaitForVerticalBlank(IDirectDraw7 *iface, DWORD Fla
     else
         target = now.QuadPart - pos + frame + vblank_start;
 
+    /* A program that took longer than a refresh since the last vertical blank it
+     * waited for has already missed the next one. Don't make it wait for the one
+     * after that as well: on slow devices that halves the speed of animations
+     * paced with this, which hardware that draws in time never shows. */
+    if (ddraw->last_vblank && target - ddraw->last_vblank > frame
+            && target - ddraw->last_vblank <= 3 * frame)
+    {
+        ddraw->last_vblank = target - frame;
+        return DD_OK;
+    }
+    ddraw->last_vblank = target;
+
     while (now.QuadPart < target)
     {
         DWORD ms = (target - now.QuadPart) * 1000 / freq.QuadPart;
