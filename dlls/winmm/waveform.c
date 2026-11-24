@@ -1267,11 +1267,19 @@ static HRESULT WINMM_CloseDevice(WINMM_Device *device)
 static LRESULT WOD_Close(HWAVEOUT hwave)
 {
     WINMM_Device *device = WINMM_GetDeviceFromHWAVE((HWAVE)hwave);
+    WINMM_CBInfo cb_info;
+    WAVEHDR *queue;
 
     TRACE("(%p)\n", hwave);
 
     if(!WINMM_ValidateAndLock(device))
         return MMSYSERR_INVALHANDLE;
+
+    /* return the buffers still in the queue, as waveOutReset does, so that the
+     * application can unprepare and reuse them */
+    queue = device->first;
+    device->first = device->last = device->playing = device->loop_start = NULL;
+    cb_info = device->cb_info;
 
     WINMM_CloseDevice(device);
 
@@ -1282,6 +1290,14 @@ static LRESULT WOD_Close(HWAVEOUT hwave)
     device->volume = NULL;
 
     LeaveCriticalSection(&device->lock);
+
+    while(queue){
+        WAVEHDR *next = queue->lpNext;
+        queue->dwFlags &= ~WHDR_INQUEUE;
+        queue->dwFlags |= WHDR_DONE;
+        WINMM_NotifyClient(&cb_info, WOM_DONE, (DWORD_PTR)queue, 0);
+        queue = next;
+    }
 
     return MMSYSERR_NOERROR;
 }
