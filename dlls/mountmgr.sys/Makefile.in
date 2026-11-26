@@ -16,6 +16,7 @@ SOURCES = \
 	device.c \
 	diskarb.c \
 	image_cd.c \
+	mdsv2.c \
 	mountmgr.c \
 	parser.c \
 	unixlib.c
