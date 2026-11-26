@@ -3,4 +3,5 @@ IMPORTS   = advapi32 winmm user32
 
 SOURCES = \
 	mcicda.c \
-    parser.c
+	mdsv2.c \
+	parser.c

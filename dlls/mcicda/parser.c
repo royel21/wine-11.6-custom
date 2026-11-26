@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "mdsv2.h"
 #include "stdio.h"
 #include <stdlib.h>
 
@@ -467,8 +468,23 @@ static bool parseMDS(const wchar_t* mdsPath, VirtualCD* cd) {
     }
     CloseHandle(file);
 
-    if (memcmp(mds, "MEDIA DESCRIPTOR", 16) || mds[16] != 1) {
+    if (!memcmp(mds, "MEDIA DESCRIPTOR", 16) && mds[16] == 2) {
         /* version 2 descriptors (newer DAEMON Tools) are encrypted */
+        size_t size;
+        uint8_t* v1 = mdsv2_to_v1(mds, (size_t)fileSize, &size);
+
+        HeapFree(GetProcessHeap(), 0, mds);
+        if (!v1 || !(mds = HeapAlloc(GetProcessHeap(), 0, size))) {
+            WARN("can't decipher MDS file %s\n", debugstr_w(mdsPath));
+            free(v1);
+            return false;
+        }
+        memcpy(mds, v1, size);
+        free(v1);
+        fileSize = size;
+    }
+
+    if (memcmp(mds, "MEDIA DESCRIPTOR", 16) || mds[16] != 1) {
         WARN("unsupported MDS file %s (version %u.%u)\n", debugstr_w(mdsPath), mds[16], mds[17]);
         HeapFree(GetProcessHeap(), 0, mds);
         return false;
@@ -498,6 +514,7 @@ static bool parseMDS(const wchar_t* mdsPath, VirtualCD* cd) {
             uint32_t trackOffset = tracksOffset + b * MDS_TRACK_BLOCK_SIZE;
             const uint8_t* block;
             uint8_t point, mode;
+            uint32_t extraOffset;
             CDTrack* trk;
 
             if (trackOffset + MDS_TRACK_BLOCK_SIZE > fileSize)
@@ -519,6 +536,10 @@ static bool parseMDS(const wchar_t* mdsPath, VirtualCD* cd) {
                 trk->sectorSize = isDvd ? 2048 : 2352 + (block[1] ? 96 : 0);
             trk->startLBA = (long)readU32(block + 36);
             trk->index1 = trk->startLBA;
+            /* the next track's pregap isn't stored in the image, so its start is not where this one ends */
+            extraOffset = readU32(block + 12);
+            if (extraOffset && extraOffset + 8 <= fileSize)
+                trk->endLBA = trk->startLBA + (long)readU32(mds + extraOffset + 4);
             trk->fileOffset = readU64(block + 40);
             strcpy(trk->mode, trk->isAudio ? "AUDIO" : mode == 0x0A ? "MODE1/2352" : "MODE2/2352");
             getMdfPath(mdsPath, mds, (size_t)fileSize, block, trk->filePath);
@@ -527,11 +548,15 @@ static bool parseMDS(const wchar_t* mdsPath, VirtualCD* cd) {
                 wcscpy(cd->binPath, trk->filePath);
         }
 
-        /* a track ends where the next one starts, the last one of a session at the session end */
+        /* without a length, a track ends where the next one starts, the last one of a session at the session end */
         for (b = firstInSession; b + 1 < cd->trackCount; b++)
-            cd->tracks[b].endLBA = cd->tracks[b + 1].startLBA;
-        if (cd->trackCount > firstInSession)
-            cd->tracks[cd->trackCount - 1].endLBA = sessionEnd;
+            if (cd->tracks[b].endLBA <= cd->tracks[b].startLBA || cd->tracks[b].endLBA > cd->tracks[b + 1].startLBA)
+                cd->tracks[b].endLBA = cd->tracks[b + 1].startLBA;
+        if (cd->trackCount > firstInSession) {
+            CDTrack* last = &cd->tracks[cd->trackCount - 1];
+            if (last->endLBA <= last->startLBA || last->endLBA > sessionEnd)
+                last->endLBA = sessionEnd;
+        }
     }
 
     HeapFree(GetProcessHeap(), 0, mds);

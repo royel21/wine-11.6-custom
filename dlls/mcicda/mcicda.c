@@ -165,6 +165,16 @@ static BOOL MCICDA_VirtualRawRead(WINE_MCICDAUDIO* wmcda, RAW_READ_INFO* info, v
 
         if (!trk)
         {
+            /* images don't store the pregaps between tracks: they play as silence */
+            for (t = 0; t < wmcda->disc->trackCount; t++)
+                if (lba < wmcda->disc->tracks[t].startLBA) break;
+            if (t < wmcda->disc->trackCount)
+            {
+                memset(out, 0, RAW_SECTOR_SIZE);
+                out += RAW_SECTOR_SIZE;
+                *bytesRead += RAW_SECTOR_SIZE;
+                continue;
+            }
             if (!i) WARN("No track found for LBA %lu\n", lba);
             break;
         }
@@ -961,8 +971,10 @@ static int MCICDA_FindTrackFromFrame(WINE_MCICDAUDIO* wmcda, DWORD frame)
 
     for (i = 0; i < wmcda->disc->trackCount; i++)
     {
+        /* a pregap counts as part of the track before it */
         if (frame >= wmcda->disc->tracks[i].startLBA &&
-            frame < wmcda->disc->tracks[i].endLBA)
+            (i + 1 == wmcda->disc->trackCount ? frame < wmcda->disc->tracks[i].endLBA
+                                              : frame < wmcda->disc->tracks[i + 1].startLBA))
         {
             return i;
         }
