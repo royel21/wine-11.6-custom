@@ -1931,8 +1931,9 @@ static HRESULT WINAPI stream_select_Info(IAMStreamSelect *iface, LONG index,
 
     if (mt)
         *mt = CreateMediaType(&filter->sources[index]->pin.pin.mt);
-    if (flags) /* todo */
-        *flags = 0;
+    /* every stream is output on its own pin */
+    if (flags)
+        *flags = AMSTREAMSELECTINFO_ENABLED;
     if (lcid) /* todo */
         *lcid = 0;
     if (group) /* todo */
@@ -1950,8 +1951,23 @@ static HRESULT WINAPI stream_select_Info(IAMStreamSelect *iface, LONG index,
 
 static HRESULT WINAPI stream_select_Enable(IAMStreamSelect *iface, LONG index, DWORD flags)
 {
-    FIXME("iface %p, index %ld, flags %#lx, stub!\n", iface, index, flags);
-    return E_NOTIMPL;
+    struct parser *filter = impl_from_IAMStreamSelect(iface);
+    HRESULT hr = S_OK;
+
+    TRACE("filter %p, index %ld, flags %#lx.\n", filter, index, flags);
+
+    EnterCriticalSection(&filter->filter.filter_cs);
+
+    if (!filter->sink.pin.peer)
+        hr = VFW_E_NOT_CONNECTED;
+    else if (index < 0 || index >= filter->source_count)
+        hr = E_INVALIDARG;
+    /* every stream is output on its own pin, so the stream asked for is already enabled */
+    else if (!(flags & (AMSTREAMSELECTENABLE_ENABLE | AMSTREAMSELECTENABLE_ENABLEALL)))
+        FIXME("Disabling stream %ld is not supported.\n", index);
+
+    LeaveCriticalSection(&filter->filter.filter_cs);
+    return hr;
 }
 
 static const IAMStreamSelectVtbl stream_select_vtbl =

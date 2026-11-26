@@ -1986,7 +1986,7 @@ static void test_streamselect(IAMStreamSelect *sel)
     IPin_ConnectionMediaType(pin_video, &mt_pin);
     ok(compare_media_types(mt, &mt_pin), "Media types don't match\n");
     FreeMediaType(&mt_pin);
-    todo_wine ok(flags == AMSTREAMSELECTINFO_ENABLED, "Got flags %lx.\n", flags);
+    ok(flags == AMSTREAMSELECTINFO_ENABLED, "Got flags %lx.\n", flags);
     ok(lcid == 0, "Got LCID %lx.\n", lcid);
     ok(group == 0, "Got group %lx.\n", group);
     todo_wine ok(name && !wcscmp(name, L"Stream(E0)"), "Got name %ls.\n", name ? name : L"(null)");
@@ -2003,7 +2003,7 @@ static void test_streamselect(IAMStreamSelect *sel)
     IPin_ConnectionMediaType(pin_audio, &mt_pin);
     ok(compare_media_types(mt, &mt_pin), "Media types don't match\n");
     FreeMediaType(&mt_pin);
-    todo_wine ok(flags == AMSTREAMSELECTINFO_ENABLED, "Got flags %lx.\n", flags);
+    ok(flags == AMSTREAMSELECTINFO_ENABLED, "Got flags %lx.\n", flags);
     ok(lcid == 0, "Got LCID %lx.\n", lcid);
     todo_wine ok(group == 1, "Got group %lx.\n", group);
     todo_wine ok(name && !wcscmp(name, L"Stream(C0)"), "Got name %ls.\n", name ? name : L"(null)");
