@@ -43,6 +43,7 @@ WINE_DECLARE_DEBUG_CHANNEL(snoop);
 WINE_DECLARE_DEBUG_CHANNEL(loaddll);
 WINE_DECLARE_DEBUG_CHANNEL(imports);
 WINE_DECLARE_DEBUG_CHANNEL(winediag);
+WINE_DECLARE_DEBUG_CHANNEL(procexit);
 
 #ifdef _WIN64
 #define DEFAULT_SECURITY_COOKIE_64  (((ULONGLONG)0x00002b99 << 32) | 0x2ddfa232)
@@ -4020,6 +4021,25 @@ extern const char * CDECL wine_get_version(void);
  */
 void WINAPI RtlExitUserProcess( DWORD status )
 {
+    /* who asked to exit: the return addresses up the stack, with their modules */
+    if (TRACE_ON(procexit))
+    {
+        void *frames[16];
+        USHORT i, count = RtlCaptureStackBackTrace( 0, ARRAY_SIZE(frames), frames, NULL );
+
+        TRACE_(procexit)( "exit code %#lx\n", status );
+        for (i = 0; i < count; i++)
+        {
+            LDR_DATA_TABLE_ENTRY *mod;
+
+            if (!LdrFindEntryForAddress( frames[i], &mod ))
+                TRACE_(procexit)( "  %p %s+%#Ix\n", frames[i], debugstr_us(&mod->BaseDllName),
+                                  (ULONG_PTR)frames[i] - (ULONG_PTR)mod->DllBase );
+            else
+                TRACE_(procexit)( "  %p\n", frames[i] );
+        }
+    }
+
     RtlEnterCriticalSection( &loader_section );
     RtlAcquirePebLock();
     NtTerminateProcess( 0, status );

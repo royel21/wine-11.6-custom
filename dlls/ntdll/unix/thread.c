@@ -77,6 +77,7 @@
 #include "unix_private.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(thread);
+WINE_DECLARE_DEBUG_CHANNEL(dbgctx);
 WINE_DECLARE_DEBUG_CHANNEL(seh);
 WINE_DECLARE_DEBUG_CHANNEL(syscall);
 WINE_DECLARE_DEBUG_CHANNEL(threadname);
@@ -1546,6 +1547,21 @@ void wait_suspend( CONTEXT *context )
  *
  * Send an EXCEPTION_DEBUG_EVENT event to the debugger.
  */
+/* the registers a debugger works with, for the dbgctx channel */
+static const char *debug_context_regs( const CONTEXT *context )
+{
+#ifdef __x86_64__
+    return wine_dbg_sprintf( "rip %lx rax %lx rcx %lx eflags %08x cs %x", (unsigned long)context->Rip,
+                             (unsigned long)context->Rax, (unsigned long)context->Rcx,
+                             (int)context->EFlags, context->SegCs );
+#elif defined(__i386__)
+    return wine_dbg_sprintf( "eip %x eax %x ecx %x eflags %08x", (int)context->Eip, (int)context->Eax,
+                             (int)context->Ecx, (int)context->EFlags );
+#else
+    return "";
+#endif
+}
+
 NTSTATUS send_debug_event( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_chance, BOOL exception )
 {
     unsigned int ret;
@@ -1582,6 +1598,15 @@ NTSTATUS send_debug_event( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_c
         select_op.wait.op = SELECT_WAIT;
         select_op.wait.handles[0] = handle;
 
+        if (TRACE_ON(dbgctx))
+        {
+            unsigned char code[16];
+            char hex[3 * 16 + 1] = "";
+            SIZE_T i, n = virtual_uninterrupted_read_memory( rec->ExceptionAddress, code, sizeof(code) );
+            for (i = 0; i < n; i++) sprintf( hex + 3 * i, " %02x", code[i] );
+            TRACE_(dbgctx)( "exception %#x at %p, code%s, before: %s\n", (int)rec->ExceptionCode,
+                            rec->ExceptionAddress, hex, debug_context_regs( context ) );
+        }
         contexts_to_server( server_contexts, context );
         server_contexts[0].flags |= SERVER_CTX_EXEC_SPACE;
         server_contexts[0].exec_space.space.space = exception ? EXEC_SPACE_EXCEPTION : EXEC_SPACE_SYSCALL;
@@ -1595,6 +1620,27 @@ NTSTATUS send_debug_event( EXCEPTION_RECORD *rec, CONTEXT *context, BOOL first_c
         }
         SERVER_END_REQ;
         if (NT_SUCCESS(ret)) contexts_from_server( context, server_contexts );
+#if defined(__x86_64__) || defined(__i386__)
+        if (exception)
+        {
+#ifdef __x86_64__
+            void *pc = (void *)context->Rip;
+#else
+            void *pc = (void *)context->Eip;
+#endif
+            virtual_rewrite_written_code( rec->ExceptionAddress, 16 );
+            if (pc != rec->ExceptionAddress) virtual_rewrite_written_code( pc, 16 );
+        }
+#endif
+        if (TRACE_ON(dbgctx))
+        {
+            unsigned char code[16];
+            char hex[3 * 16 + 1] = "";
+            SIZE_T i, n = virtual_uninterrupted_read_memory( rec->ExceptionAddress, code, sizeof(code) );
+            for (i = 0; i < n; i++) sprintf( hex + 3 * i, " %02x", code[i] );
+            TRACE_(dbgctx)( "exception %#x status %#x, code%s, after: %s\n", (int)rec->ExceptionCode, ret,
+                            hex, debug_context_regs( context ) );
+        }
     }
 
     pthread_sigmask( SIG_SETMASK, &old_set, NULL );
@@ -2330,7 +2376,16 @@ NTSTATUS WINAPI NtQueryInformationThread( HANDLE handle, THREADINFOCLASS class,
     }
 
     case ThreadWow64Context:
-        return get_thread_wow64_context( handle, data, length );
+    {
+        NTSTATUS status = get_thread_wow64_context( handle, data, length );
+        if (!status && length >= sizeof(I386_CONTEXT))
+        {
+            const I386_CONTEXT *ctx = data;
+            TRACE_(dbgctx)( "get %p flags %#x eip %08x eax %08x ecx %08x eflags %08x\n", handle,
+                            (int)ctx->ContextFlags, (int)ctx->Eip, (int)ctx->Eax, (int)ctx->Ecx, (int)ctx->EFlags );
+        }
+        return status;
+    }
 
     case ThreadHideFromDebugger:
         /* TP Shell Service depends on ThreadHideFromDebugger returning
@@ -2583,6 +2638,12 @@ NTSTATUS WINAPI NtSetInformationThread( HANDLE handle, THREADINFOCLASS class,
     }
 
     case ThreadWow64Context:
+        if (length >= sizeof(I386_CONTEXT))
+        {
+            const I386_CONTEXT *ctx = data;
+            TRACE_(dbgctx)( "set %p flags %#x eip %08x eax %08x ecx %08x eflags %08x\n", handle,
+                            (int)ctx->ContextFlags, (int)ctx->Eip, (int)ctx->Eax, (int)ctx->Ecx, (int)ctx->EFlags );
+        }
         return set_thread_wow64_context( handle, data, length );
 
     case ThreadEnableAlignmentFaultFixup:

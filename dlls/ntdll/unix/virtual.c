@@ -92,6 +92,7 @@
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(virtual);
+WINE_DECLARE_DEBUG_CHANNEL(codewrite);
 WINE_DECLARE_DEBUG_CHANNEL(module);
 WINE_DECLARE_DEBUG_CHANNEL(virtual_ranges);
 
@@ -4902,6 +4903,64 @@ BOOL virtual_check_buffer_for_write( void *ptr, SIZE_T size )
     }
     __ENDTRY
     return TRUE;
+}
+
+
+/***********************************************************************
+ *           virtual_rewrite_written_code
+ *
+ * A debugger may have patched this code from another process (copy protections restore the
+ * instruction they replaced with a trap). Write the same bytes again from this process, so
+ * that a CPU emulator running the process (such as Box64) sees the code change and drops what
+ * it translated from the old bytes: a write from another process goes around the page
+ * protection the emulator watches.
+ */
+void virtual_rewrite_written_code( void *addr, SIZE_T size )
+{
+    const SIZE_T page_size = page_mask + 1;
+    char *page = ROUND_ADDR( addr, page_mask ), *end = (char *)addr + size;
+
+    if (!size || size > 0x100000 || end < (char *)addr) return;
+
+    for (; page < end; page += page_size)
+    {
+        char *start = max( page, (char *)addr ), *stop = min( page + page_size, end );
+        volatile char *p;
+        void *base = page;
+        SIZE_T len = page_size;
+        unsigned int status;
+        sigset_t sigset;
+        BOOL exec;
+        ULONG old, prot;
+
+        server_enter_uninterrupted_section( &virtual_mutex, &sigset );
+        exec = find_view( page, page_size ) &&
+               (get_page_vprot( page ) & VPROT_COMMITTED) &&
+               ((get_page_vprot( page ) & VPROT_EXEC) || force_exec_prot);
+        server_leave_uninterrupted_section( &virtual_mutex, &sigset );
+        if (!exec)
+        {
+            TRACE_(codewrite)( "%p-%p not code, left alone\n", start, stop );
+            continue;
+        }
+
+        if ((status = NtProtectVirtualMemory( NtCurrentProcess(), &base, &len, PAGE_EXECUTE_READWRITE, &old )))
+        {
+            WARN_(codewrite)( "%p-%p can't be made writable: %#x\n", start, stop, status );
+            continue;
+        }
+        for (p = start; p < stop; p++) *p = *p;
+        base = page;
+        len = page_size;
+        NtProtectVirtualMemory( NtCurrentProcess(), &base, &len, old, &prot );
+        if (TRACE_ON(codewrite))
+        {
+            char hex[3 * 16 + 1] = "";
+            int i, n = min( stop - start, 16 );
+            for (i = 0; i < n; i++) sprintf( hex + 3 * i, " %02x", (unsigned char)start[i] );
+            TRACE_(codewrite)( "%p-%p rewritten, protection %#x, bytes%s\n", start, stop, (int)old, hex );
+        }
+    }
 }
 
 
