@@ -540,6 +540,20 @@ static VkResult init_physical_device( struct vulkan_physical_device *physical_de
     extensions.has_VK_KHR_win32_keyed_mutex = extensions.has_VK_KHR_timeline_semaphore &&
                                               extensions.has_VK_KHR_external_semaphore_fd;
 
+    /* Some drivers list present_wait while vkWaitForPresentKHR jumps to a null pointer, which
+     * makes DXVK's presenter fault on every frame. It is optional for applications (DXVK paces
+     * frames by itself without it), so hide it unless WINE_VK_PRESENT_WAIT=1. */
+    if (extensions.has_VK_KHR_present_wait || extensions.has_VK_KHR_present_wait2)
+    {
+        const char *env = getenv( "WINE_VK_PRESENT_WAIT" );
+        if (!env || *env != '1')
+        {
+            TRACE( "Hiding VK_KHR_present_wait and VK_KHR_present_wait2.\n" );
+            extensions.has_VK_KHR_present_wait = 0;
+            extensions.has_VK_KHR_present_wait2 = 0;
+        }
+    }
+
     /* filter out unsupported client device extensions */
 #define USE_VK_EXT(x) client_physical_device->extensions.has_ ## x = extensions.has_ ## x;
     ALL_VK_CLIENT_DEVICE_EXTS
