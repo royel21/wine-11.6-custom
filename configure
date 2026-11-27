@@ -1457,6 +1457,7 @@ enable_schedsvc
 enable_scrobj
 enable_scrrun
 enable_scsiport_sys
+enable_secdrv_sys
 enable_sechost
 enable_secur32
 enable_security
@@ -22980,6 +22981,7 @@ wine_fn_config_makefile dlls/scrobj/tests enable_tests
 wine_fn_config_makefile dlls/scrrun enable_scrrun
 wine_fn_config_makefile dlls/scrrun/tests enable_tests
 wine_fn_config_makefile dlls/scsiport.sys enable_scsiport_sys
+wine_fn_config_makefile dlls/secdrv.sys enable_secdrv_sys
 wine_fn_config_makefile dlls/sechost enable_sechost
 wine_fn_config_makefile dlls/secur32 enable_secur32
 wine_fn_config_makefile dlls/secur32/tests enable_tests

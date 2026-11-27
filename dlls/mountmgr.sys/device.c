@@ -1194,6 +1194,26 @@ static void create_scsi_entry(struct volume* volume, const struct scsi_info* inf
     RegCloseKey(lun_key);
 }
 
+/* X: is where the Winlator file manager loads disc images: list it under
+ * HARDWARE\DEVICEMAP\Scsi like the CD drive of an ATAPI controller, at the
+ * address IOCTL_SCSI_GET_ADDRESS reports for it */
+static void create_image_scsi_entry(void)
+{
+    static const WCHAR lun_path[] = L"HARDWARE\\DEVICEMAP\\Scsi\\Scsi Port 1\\Scsi Bus 0\\Target Id 0\\Logical Unit Id 0";
+    struct scsi_info info = { SCSI_CDROM_PERIPHERAL, { sizeof(SCSI_ADDRESS), IMAGE_CD_SCSI_PORT, 0, 0, 0 },
+                              IMAGE_CD_INITIATOR_ID, "atapi", IMAGE_CD_IDENTIFIER };
+    HKEY key;
+
+    C_ASSERT(IMAGE_CD_SCSI_PORT == 1);  /* lun_path */
+
+    create_scsi_entry(NULL, &info);
+    if (!RegOpenKeyExW(HKEY_LOCAL_MACHINE, lun_path, 0, KEY_SET_VALUE, &key))
+    {
+        RegSetValueExW(key, L"DeviceName", 0, REG_SZ, (const BYTE*)L"CdRom0", sizeof(L"CdRom0"));
+        RegCloseKey(key);
+    }
+}
+
 /* create a new disk volume */
 NTSTATUS add_volume(const char* udi, const char* device, const char* mount_point,
     enum device_type type, const GUID* guid, const char* disk_serial,
@@ -1402,6 +1422,11 @@ static void apply_label_override(struct volume* volume, int letter)
     HKEY key;
 
     if (letter < 0 || letter >= 26) return;
+
+    /* a disc image on X: reports the label and serial number of the disc, like a real drive */
+    if (letter == 'x' - 'a' && image_cd_volume_info(volume->label, ARRAY_SIZE(volume->label), &volume->serial))
+        return;
+
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Wine\\Labels", 0, KEY_QUERY_VALUE, &key)) return;
     if (!RegQueryValueExW(key, value_name, NULL, &type, (BYTE*)reg_label, &size) && type == REG_SZ)
         lstrcpynW(volume->label, reg_label, ARRAY_SIZE(volume->label));
@@ -2045,6 +2070,7 @@ static NTSTATUS WINAPI harddisk_ioctl(DEVICE_OBJECT* device, IRP* irp)
 NTSTATUS WINAPI harddisk_driver_entry(DRIVER_OBJECT* driver, UNICODE_STRING* path)
 {
     struct disk_device* device;
+    struct dos_drive* drive;
 
     harddisk_driver = driver;
     driver->MajorFunction[IRP_MJ_DEVICE_CONTROL] = harddisk_ioctl;
@@ -2055,6 +2081,9 @@ NTSTATUS WINAPI harddisk_driver_entry(DRIVER_OBJECT* driver, UNICODE_STRING* pat
     create_disk_device(DEVICE_HARDDISK, &device, NULL);
 
     create_drive_devices();
+
+    LIST_FOR_EACH_ENTRY(drive, &drives_list, struct dos_drive, entry)
+        if (drive->drive == 'x' - 'a') create_image_scsi_entry();
 
     return STATUS_SUCCESS;
 }

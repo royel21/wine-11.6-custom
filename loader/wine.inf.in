@@ -153,6 +153,7 @@ AddService=Winmgmt,0,WinmgmtService
 AddService=wuauserv,0,wuauService
 AddService=NDIS,0x800,NDISService
 AddService=nsiproxy,0x800,NsiProxyService
+AddService=secdrv,0,SecdrvService
 
 [DefaultInstall.ntx86.Services]
 AddService=BITS,0,BITSService
@@ -173,6 +174,7 @@ AddService=Winmgmt,0,WinmgmtService
 AddService=wuauserv,0,wuauService
 AddService=NDIS,0x800,NDISService
 AddService=nsiproxy,0x800,NsiProxyService
+AddService=secdrv,0,SecdrvService
 
 [DefaultInstall.ntamd64.Services]
 AddService=BITS,0,BITSService
@@ -193,6 +195,7 @@ AddService=Winmgmt,0,WinmgmtService
 AddService=wuauserv,0,wuauService
 AddService=NDIS,0x800,NDISService
 AddService=nsiproxy,0x800,NsiProxyService
+AddService=secdrv,0,SecdrvService
 
 [DefaultInstall.ntarm64.Services]
 AddService=BITS,0,BITSService
@@ -213,6 +216,7 @@ AddService=Winmgmt,0,WinmgmtService
 AddService=wuauserv,0,wuauService
 AddService=NDIS,0x800,NDISService
 AddService=nsiproxy,0x800,NsiProxyService
+AddService=secdrv,0,SecdrvService
 
 [Strings]
 MciExtStr="Software\Microsoft\Windows NT\CurrentVersion\MCI Extensions"
@@ -1233,6 +1237,14 @@ HKR,Parameters,"ServiceDll",,"%11%\scardsvr.dll"
 HKR,Parameters,"ServiceMain",,"CalaisMain"
 HKLM,%CurrentVersionNT%\SvcHost,"netsvcs",0x00010008,"scardsvr"
 
+[SecdrvService]
+Description="Macrovision SafeDisc driver"
+DisplayName="Security Driver"
+ServiceBinary="%12%\secdrv.sys"
+ServiceType=1
+StartType=3
+ErrorControl=1
+
 [SpoolerService]
 AddReg=SpoolerServiceKeys
 Description="Loads files to memory for later printing"
@@ -1357,6 +1369,8 @@ ErrorControl=1
 
 [Services]
 HKLM,%CurrentVersion%\RunServices,"winemenubuilder",2,"%11%\winemenubuilder.exe -a -r"
+; SafeDisc installs its own secdrv.sys, which needs ring 0
+HKCU,Software\Wine\DllOverrides,"secdrv",2,"builtin"
 HKLM,"System\CurrentControlSet\Services\Dnscache\Parameters",,16
 HKLM,"System\CurrentControlSet\Services\Eventlog\Application",,16
 HKLM,"System\CurrentControlSet\Services\Eventlog\System","Sources",0x10000,""

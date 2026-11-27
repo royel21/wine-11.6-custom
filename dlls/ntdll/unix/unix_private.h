@@ -317,6 +317,7 @@ extern BOOL virtual_check_buffer_for_read( const void *ptr, SIZE_T size );
 extern BOOL virtual_check_buffer_for_write( void *ptr, SIZE_T size );
 extern SIZE_T virtual_uninterrupted_read_memory( const void *addr, void *buffer, SIZE_T size );
 extern NTSTATUS virtual_uninterrupted_write_memory( void *addr, const void *buffer, SIZE_T size );
+extern void virtual_rewrite_written_code( void *addr, SIZE_T size );
 extern void virtual_set_force_exec( BOOL enable );
 extern void virtual_enable_write_exceptions( BOOL enable );
 extern void virtual_set_large_address_space(void);

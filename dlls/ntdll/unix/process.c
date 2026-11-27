@@ -71,6 +71,7 @@
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(process);
+WINE_DECLARE_DEBUG_CHANNEL(procexit);
 
 
 static ULONG execute_flags = MEM_EXECUTE_OPTION_DISABLE;
@@ -982,6 +983,8 @@ NTSTATUS WINAPI NtTerminateProcess( HANDLE handle, LONG exit_code )
 {
     unsigned int ret;
     BOOL self;
+
+    TRACE_(procexit)( "handle %p exit code %#x\n", handle, (int)exit_code );
 
     SERVER_START_REQ( terminate_process )
     {
